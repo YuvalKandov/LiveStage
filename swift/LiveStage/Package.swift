@@ -1,0 +1,23 @@
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "LiveStage",
+    platforms: [
+        .iOS("16.2"),
+        // Host platform for `swift test`: lets the portable LiveStageModels + its tests
+        // build/run on macOS. All ActivityKit/WidgetKit code is guarded with #if canImport(...).
+        .macOS(.v13),
+    ],
+    products: [
+        // Shared data contract imported by every Swift side (and mirrored by the backend in M1+).
+        .library(name: "LiveStageModels", targets: ["LiveStageModels"]),
+        // Reusable native SwiftUI renderers + the ActivityConfiguration for the Widget Extension.
+        .library(name: "LiveStageUI", targets: ["LiveStageUI"]),
+    ],
+    targets: [
+        .target(name: "LiveStageModels"),
+        .target(name: "LiveStageUI", dependencies: ["LiveStageModels"]),
+        .testTarget(name: "LiveStageModelsTests", dependencies: ["LiveStageModels"]),
+    ]
+)
