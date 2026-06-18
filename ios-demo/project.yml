@@ -48,6 +48,12 @@ targets:
     platform: iOS
     sources:
       - TripDemo
+    # Local-dev secrets (the seeded mobile key + backend host) are injected from an uncommitted
+    # xcconfig (build spec §12: the mobile key is not a true secret, but we still keep it out of
+    # version control). Copy DevelopmentSecrets.xcconfig.example -> DevelopmentSecrets.xcconfig.
+    configFiles:
+      Debug: DevelopmentSecrets.xcconfig
+      Release: DevelopmentSecrets.xcconfig
     info:
       path: TripDemo/Info.plist
       properties:
@@ -59,12 +65,22 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.livestage.tripdemo
             CFBundleURLSchemes: [triptogether]     # deep-link scheme (build spec §11)
+        # Allow plain-HTTP to the local backend on the simulator (build spec §12: HTTPS in any
+        # non-local deployment). NSAllowsLocalNetworking covers localhost without a blanket exception.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Surfaced from the xcconfig build settings so the app can read them at runtime. The base URL
+        # is built in code as http://<host> (xcconfig can't hold "//", so only the host is injected).
+        LiveStageAPIKey: $(LIVESTAGE_API_KEY)
+        LiveStageAPIHost: $(LIVESTAGE_API_HOST)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.livestage.tripdemo
     dependencies:
       - package: LiveStage
         product: LiveStageModels
+      - package: LiveStage
+        product: LiveStage                         # the SDK: configure/start/update/end/...
       - target: TripDemoWidget                     # embed the extension into the app
 
   TripDemoWidget:

@@ -11,18 +11,27 @@ struct ContentView: View {
                         Text(controller.areActivitiesEnabled ? "Enabled" : "Disabled")
                             .foregroundStyle(controller.areActivitiesEnabled ? .green : .red)
                     }
+                    LabeledContent("Backend key") {
+                        Text(DemoConfig.isConfigured ? "Configured" : "Missing")
+                            .foregroundStyle(DemoConfig.isConfigured ? .green : .red)
+                    }
+                    LabeledContent("Backend URL") {
+                        Text(DemoConfig.baseURL.absoluteString).foregroundStyle(.secondary)
+                    }
                     LabeledContent("Active sessions") {
                         Text("\(controller.liveSessionIds.count)")
                     }
                 } header: {
                     Text("Status")
                 } footer: {
-                    if !controller.areActivitiesEnabled {
+                    if !DemoConfig.isConfigured {
+                        Text("Set ios-demo/DevelopmentSecrets.xcconfig with the seeded mobile key (cd backend && npm run seed), then run the backend (npm run dev).")
+                    } else if !controller.areActivitiesEnabled {
                         Text("Enable Live Activities in Settings to test on this device.")
                     }
                 }
 
-                Section("Journey activity (M0 - hardcoded, local)") {
+                Section("Journey activity (M1 - server-backed via the SDK)") {
                     Button {
                         controller.startPrimary()
                     } label: {
@@ -34,7 +43,7 @@ struct ContentView: View {
                     } label: {
                         Label("Update", systemImage: "arrow.clockwise")
                     }
-                    .disabled(!controller.liveSessionIds.contains("demo-session-1"))
+                    .disabled(controller.primarySessionId == nil)
 
                     Button {
                         controller.endAll()
@@ -53,6 +62,14 @@ struct ContentView: View {
                     }
                 } footer: {
                     Text("The minimal Dynamic Island presentation appears only when Live Activities from two DIFFERENT apps are live (e.g. this one + a Clock timer). Two activities from this same app stack on the Lock Screen but don't reliably show minimal in the Island.")
+                }
+
+                if let error = controller.lastError {
+                    Section("Last error") {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
                 }
             }
             .navigationTitle("TripDemo")

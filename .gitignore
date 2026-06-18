@@ -17,3 +17,12 @@ xcuserdata/
 node_modules/
 dist/
 *.log
+
+# Backend local data + generated secrets (never commit)
+*.db
+*.db-wal
+*.db-shm
+.seeded-keys.json
+
+# iOS local dev secrets (injected, never committed)
+DevelopmentSecrets.xcconfig

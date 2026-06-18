@@ -1,0 +1,193 @@
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance } from "fastify";
+import type { Database } from "better-sqlite3";
+import { HttpError, nowIso, stableHash } from "../util";
+import { requireMobileKey } from "../auth/middleware";
+import { getSession, getTemplate, currentState } from "../repo";
+import { composeDeepLink } from "../deeplink";
+import { validatePayload } from "../validation/journey";
+import { applyUpdate } from "../services/updateService";
+import { writeLog } from "../logs";
+import type { ActivityAttributes } from "../models";
+
+/** Runs `fn`; if it throws a 400 (validation/deep-link), writes a `reject` log first, then rethrows. */
+function withRejectLog<T>(
+  db: Database,
+  projectId: string,
+  sessionId: string | null,
+  fn: () => T,
+): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 400) {
+      writeLog(db, {
+        projectId,
+        sessionId,
+        kind: "reject",
+        detail: `${e.field ? e.field + ": " : ""}${e.message}`,
+        status: "error",
+      });
+    }
+    throw e;
+  }
+}
+
+export function registerActivityRoutes(app: FastifyInstance, db: Database): void {
+  // POST /v1/activities — start. Body: { templateId, deepLinkParameters, payload }. The server
+  // composes the deep link, freezes attributes_json, creates the session at version 1, and writes
+  // the first session_states row. Honors a persistent Idempotency-Key (header) for retry safety.
+  app.post("/v1/activities", (req, reply) => {
+    const key = requireMobileKey(db, req);
+    const body = (req.body ?? {}) as {
+      templateId?: string;
+      deepLinkParameters?: Record<string, string>;
+      payload?: unknown;
+    };
+    if (!body.templateId) throw new HttpError(400, "validation", "templateId is required.", "templateId");
+
+    const template = getTemplate(db, key.projectId, body.templateId);
+    const params = body.deepLinkParameters ?? {};
+
+    const { payload, deepLinkURL } = withRejectLog(db, key.projectId, null, () => ({
+      payload: validatePayload(body.payload, template.templateType),
+      deepLinkURL: composeDeepLink(template.deepLinkBase, params),
+    }));
+
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    const requestHash = stableHash({ templateId: body.templateId, deepLinkParameters: params, payload });
+
+    // Persistent start idempotency: a repeat with the same key + same body returns the original
+    // session; a repeat with a DIFFERENT body is a 409 conflict (build spec: retry-safe start).
+    if (idempotencyKey) {
+      const prior = db
+        .prepare(`SELECT session_id, request_hash FROM start_idempotency WHERE key = ?`)
+        .get(idempotencyKey) as { session_id: string; request_hash: string } | undefined;
+      if (prior) {
+        if (prior.request_hash !== requestHash) {
+          throw new HttpError(409, "idempotency_conflict", "Idempotency-Key reused with a different request.");
+        }
+        const existing = getSession(db, key.projectId, prior.session_id);
+        return reply.send({
+          sessionId: existing.id,
+          version: existing.version,
+          deepLinkURL: existing.deep_link_url,
+          staleAfterSeconds: template.staleAfterSeconds,
+          lastUpdatedAt: existing.last_updated_at,
+        });
+      }
+    }
+
+    const sessionId = randomUUID();
+    const now = nowIso();
+    const attributes: ActivityAttributes = {
+      sessionId,
+      templateId: template.templateId,
+      templateType: template.templateType,
+      iconIdentifier: template.icon,
+      accentStyle: template.accentStyle,
+      labels: template.labels,
+      deepLinkURL,
+    };
+
+    const create = db.transaction(() => {
+      db.prepare(
+        `INSERT INTO activity_sessions
+           (id, project_id, template_id, type, deep_link_url, status, version,
+            last_updated_at, started_at, ended_at, attributes_json)
+         VALUES (?, ?, ?, ?, ?, 'active', 1, ?, ?, NULL, ?)`,
+      ).run(
+        sessionId,
+        key.projectId,
+        template.templateId,
+        template.templateType,
+        deepLinkURL,
+        now,
+        now,
+        JSON.stringify(attributes),
+      );
+
+      db.prepare(
+        `INSERT INTO session_states (session_id, version, mutation_id, payload_json, accepted_at, created_at)
+         VALUES (?, 1, NULL, ?, ?, ?)`,
+      ).run(sessionId, JSON.stringify(payload), now, now);
+
+      writeLog(db, { projectId: key.projectId, sessionId, kind: "start", detail: template.templateId, status: "ok" });
+
+      if (idempotencyKey) {
+        db.prepare(
+          `INSERT INTO start_idempotency (key, project_id, session_id, request_hash, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        ).run(idempotencyKey, key.projectId, sessionId, requestHash, now);
+      }
+    });
+    create();
+
+    return reply.send({
+      sessionId,
+      version: 1,
+      deepLinkURL,
+      staleAfterSeconds: template.staleAfterSeconds,
+      lastUpdatedAt: now,
+    });
+  });
+
+  // PATCH /v1/activities/:sessionId — update. Body: { clientMutationId, payload }. Payload only;
+  // the server authors version/lastUpdatedAt. Goes through the shared transactional updateService.
+  app.patch("/v1/activities/:sessionId", (req, reply) => {
+    const key = requireMobileKey(db, req);
+    const { sessionId } = req.params as { sessionId: string };
+    const body = (req.body ?? {}) as { clientMutationId?: string; payload?: unknown };
+    if (!body.clientMutationId) {
+      throw new HttpError(400, "validation", "clientMutationId is required.", "clientMutationId");
+    }
+
+    const session = getSession(db, key.projectId, sessionId);
+    const payload = withRejectLog(db, key.projectId, sessionId, () =>
+      validatePayload(body.payload, session.type as "journey"),
+    );
+
+    const result = applyUpdate(db, { sessionId, clientMutationId: body.clientMutationId, payload });
+    return reply.send({ version: result.version, lastUpdatedAt: result.lastUpdatedAt, state: result.state });
+  });
+
+  // GET /v1/activities/:sessionId — poll. Returns the full current LiveStageContentState.
+  app.get("/v1/activities/:sessionId", (req, reply) => {
+    const key = requireMobileKey(db, req);
+    const { sessionId } = req.params as { sessionId: string };
+    const session = getSession(db, key.projectId, sessionId);
+    const template = getTemplate(db, key.projectId, session.template_id);
+    return reply.send({
+      status: session.status,
+      version: session.version,
+      lastUpdatedAt: session.last_updated_at,
+      state: currentState(db, sessionId),
+      staleAfterSeconds: template.staleAfterSeconds,
+    });
+  });
+
+  // POST /v1/activities/:sessionId/end — idempotent end. active->ended returns ok; ended->ended
+  // returns the already-ended result without error (build spec: retry-safe end).
+  app.post("/v1/activities/:sessionId/end", (req, reply) => {
+    const key = requireMobileKey(db, req);
+    const { sessionId } = req.params as { sessionId: string };
+    const body = (req.body ?? {}) as { reason?: string };
+    const session = getSession(db, key.projectId, sessionId);
+
+    if (session.status === "ended") {
+      return reply.send({ status: "ended", endedAt: session.ended_at, alreadyEnded: true });
+    }
+    const now = nowIso();
+    db.transaction(() => {
+      db.prepare(`UPDATE activity_sessions SET status = 'ended', ended_at = ? WHERE id = ?`).run(now, sessionId);
+      writeLog(db, {
+        projectId: key.projectId,
+        sessionId,
+        kind: "end",
+        detail: body.reason ?? null,
+        status: "ok",
+      });
+    })();
+    return reply.send({ status: "ended", endedAt: now, alreadyEnded: false });
+  });
+}

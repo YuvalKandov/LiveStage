@@ -10,7 +10,9 @@
 		2473983AA3C22BDE09243F06 /* TripDemoWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC26369266DB6B9CFA768FE4 /* TripDemoWidgetBundle.swift */; };
 		2CE9F64128C2D5D77425EBF6 /* LiveStagePreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E56A89CB70CCC77FC62241 /* LiveStagePreviews.swift */; };
 		532E72A9710EF50B0D185C0C /* LiveStageModels in Frameworks */ = {isa = PBXBuildFile; productRef = 858DF78207CBED5A36EE9658 /* LiveStageModels */; };
+		6C09547510701DDA31CAC417 /* DemoConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB1AA414B7FB1B5BC4FD597 /* DemoConfig.swift */; };
 		6CE471EF721AEDA70DCF6063 /* TripDemoWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 24D7A300886A8AE03449901A /* TripDemoWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7849FA5CD05B79B5737E8379 /* LiveStage in Frameworks */ = {isa = PBXBuildFile; productRef = 0E45FBD05F48ED82B0CB0838 /* LiveStage */; };
 		A43A22A2F7152E12DA9DFF40 /* TripDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BAE80147054AF50764208 /* TripDemoApp.swift */; };
 		B6F65973715EF8AD2D4CA7A9 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55027CEB30FEE92AE216D9BD /* LiveActivityController.swift */; };
 		C9CF228A3E88BFBBBB769490 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5695A50009EA632379A68201 /* ContentView.swift */; };
@@ -43,16 +45,18 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		20B23E93201925DF2266680E /* TripDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TripDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		24D7A300886A8AE03449901A /* TripDemoWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TripDemoWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		20B23E93201925DF2266680E /* TripDemo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TripDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		24D7A300886A8AE03449901A /* TripDemoWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = TripDemoWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		335BAE80147054AF50764208 /* TripDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDemoApp.swift; sourceTree = "<group>"; };
 		4C5D2AA67867F69B588D1EE9 /* LiveStage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LiveStage; path = ../swift/LiveStage; sourceTree = SOURCE_ROOT; };
 		52C767C0D1535E3177B5ADE9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		55027CEB30FEE92AE216D9BD /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
 		5695A50009EA632379A68201 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		7DB1AA414B7FB1B5BC4FD597 /* DemoConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConfig.swift; sourceTree = "<group>"; };
 		A2C6372F44D1E304AC0CD181 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EC26369266DB6B9CFA768FE4 /* TripDemoWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDemoWidgetBundle.swift; sourceTree = "<group>"; };
 		F1E56A89CB70CCC77FC62241 /* LiveStagePreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStagePreviews.swift; sourceTree = "<group>"; };
+		"TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DevelopmentSecrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +65,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				532E72A9710EF50B0D185C0C /* LiveStageModels in Frameworks */,
+				7849FA5CD05B79B5737E8379 /* LiveStage in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				5695A50009EA632379A68201 /* ContentView.swift */,
+				7DB1AA414B7FB1B5BC4FD597 /* DemoConfig.swift */,
 				A2C6372F44D1E304AC0CD181 /* Info.plist */,
 				55027CEB30FEE92AE216D9BD /* LiveActivityController.swift */,
 				335BAE80147054AF50764208 /* TripDemoApp.swift */,
@@ -124,6 +130,14 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		"TEMP_7DF3F30D-BC39-4A5E-AFD4-36A0613543A8" /* ios-demo */ = {
+			isa = PBXGroup;
+			children = (
+				"TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */,
+			);
+			path = "ios-demo";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -143,6 +157,7 @@
 			name = TripDemo;
 			packageProductDependencies = (
 				858DF78207CBED5A36EE9658 /* LiveStageModels */,
+				0E45FBD05F48ED82B0CB0838 /* LiveStage */,
 			);
 			productName = TripDemo;
 			productReference = 20B23E93201925DF2266680E /* TripDemo.app */;
@@ -178,9 +193,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					501BA57B08C8C65571DB5AAB = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					6916659B1DA63611B9552064 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -214,6 +231,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C9CF228A3E88BFBBBB769490 /* ContentView.swift in Sources */,
+				6C09547510701DDA31CAC417 /* DemoConfig.swift in Sources */,
 				B6F65973715EF8AD2D4CA7A9 /* LiveActivityController.swift in Sources */,
 				A43A22A2F7152E12DA9DFF40 /* TripDemoApp.swift in Sources */,
 			);
@@ -241,10 +259,10 @@
 /* Begin XCBuildConfiguration section */
 		2A2C20700B78A9A138A13D80 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = "TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 9GMD4HXWX3;
 				INFOPLIST_FILE = TripDemo/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -325,10 +343,10 @@
 		};
 		B19547CBE4029677A254AB01 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = "TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 9GMD4HXWX3;
 				INFOPLIST_FILE = TripDemo/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -343,7 +361,6 @@
 		C589E87D33264AD65EBCF52E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 9GMD4HXWX3;
 				INFOPLIST_FILE = TripDemoWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -359,7 +376,6 @@
 		E072BC969D06958C0D712FA5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				DEVELOPMENT_TEAM = 9GMD4HXWX3;
 				INFOPLIST_FILE = TripDemoWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -472,6 +488,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0E45FBD05F48ED82B0CB0838 /* LiveStage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LiveStage;
+		};
 		15306F0962130F465E25BF07 /* LiveStageUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LiveStageUI;

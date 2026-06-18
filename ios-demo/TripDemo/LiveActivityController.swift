@@ -1,24 +1,27 @@
 import ActivityKit
 import Foundation
+import LiveStage
 import LiveStageModels
 
-/// M0 drives Live Activities **directly** through ActivityKit - there is no SDK networking yet
-/// (build spec §13: "The demo app starts it locally via `Activity.request`"). The real
-/// `LiveStage.start/update/end` engine arrives in M1.
+/// M1 drives Live Activities through the **LiveStage SDK** (`start`/`update`/`end`), not ActivityKit
+/// directly (that was M0). The SDK talks to the local backend, requests the activity, and runs the
+/// 8s poller so portal/backend updates flow in. ActivityKit is imported here only for the
+/// `areActivitiesEnabled` capability check shown in the UI.
 @MainActor
 final class LiveActivityController: ObservableObject {
 
     /// Session ids of the currently-live activities (drives the UI).
     @Published private(set) var liveSessionIds: [String] = []
+    /// The id used by the "Update" button (the first activity started).
+    @Published private(set) var primarySessionId: String?
+    /// Last error surfaced to the developer (e.g. backend down, validation rejected).
+    @Published var lastError: String?
 
-    private var activities: [String: Activity<LiveStageActivityAttributes>] = [:]
+    private var sessions: [String: LiveStageSession] = [:]
     /// The mutable Journey state per session, so "Update" can advance it forward.
     private var journeyStates: [String: JourneyState] = [:]
-    private var versions: [String: Int] = [:]
 
-    private let primaryId = "demo-session-1"
-    private let secondId = "demo-session-2"
-    private let staleAfter: TimeInterval = 15 * 60   // default 900s (build spec §4.4)
+    private let templateId = "trip-status"
 
     var areActivitiesEnabled: Bool {
         ActivityAuthorizationInfo().areActivitiesEnabled
@@ -26,17 +29,8 @@ final class LiveActivityController: ObservableObject {
 
     // MARK: - Start
 
-    /// Starts the primary hardcoded Journey activity (design §04 sample).
+    /// Starts the primary Journey activity (design §04 sample) through the SDK.
     func startPrimary() {
-        let attributes = LiveStageActivityAttributes(
-            sessionId: primaryId,
-            templateId: "trip-status",
-            templateType: .journey,
-            iconIdentifier: "airplane",
-            accentStyle: .blue,
-            labels: TemplateLabels(nextStepLabel: "Next", targetLabel: "Departs in"),
-            deepLinkURL: URL(string: "triptogether://trip?tripId=123")!
-        )
         let journey = JourneyState(
             title: "Trip to Rome",
             currentStep: "Heading to the airport",
@@ -45,23 +39,13 @@ final class LiveActivityController: ObservableObject {
             targetDate: Date().addingTimeInterval(102 * 60),  // ~1h 42m, per the design sample
             statusText: "On time"
         )
-        request(attributes: attributes, journey: journey)
+        start(deepLinkParameters: ["tripId": "123"], journey: journey, isPrimary: true)
     }
 
-    /// Starts a SECOND activity. Two same-app activities stack on the Lock Screen, but iOS 26 does
-    /// NOT reliably show the second one as a minimal in the Dynamic Island - minimal reliably appears
-    /// only with Live Activities from two DIFFERENT apps (e.g. this one + a Clock timer). Kept as a
-    /// Lock-Screen multi-activity demo; for minimal, verify alongside another app or via the widget preview.
+    /// Starts a SECOND activity (different trip). Two same-app activities stack on the Lock Screen;
+    /// iOS 26 does not reliably show the second as a minimal in the Dynamic Island (that needs two
+    /// DIFFERENT apps, e.g. this one + a Clock timer).
     func startSecond() {
-        let attributes = LiveStageActivityAttributes(
-            sessionId: secondId,
-            templateId: "trip-status",
-            templateType: .journey,
-            iconIdentifier: "car",
-            accentStyle: .indigo,
-            labels: TemplateLabels(nextStepLabel: "Next", targetLabel: "Departs in"),
-            deepLinkURL: URL(string: "triptogether://trip?tripId=456")!
-        )
         let journey = JourneyState(
             title: "Drive to Florence",
             currentStep: "Picking up the rental",
@@ -70,41 +54,33 @@ final class LiveActivityController: ObservableObject {
             targetDate: Date().addingTimeInterval(38 * 60),
             statusText: "Light traffic"
         )
-        request(attributes: attributes, journey: journey)
+        start(deepLinkParameters: ["tripId": "456"], journey: journey, isPrimary: false)
     }
 
-    private func request(attributes: LiveStageActivityAttributes, journey: JourneyState) {
-        guard areActivitiesEnabled else {
-            print("[TripDemo] Live Activities are not enabled on this device/simulator.")
-            return
-        }
-        let sessionId = attributes.sessionId
-        let content = ActivityContent(
-            state: LiveStageContentState(
-                payload: .journey(journey),
-                metadata: StateMetadata(lastUpdatedAt: Date(), version: 1)
-            ),
-            staleDate: Date().addingTimeInterval(staleAfter)
-        )
-        do {
-            // Foreground-only requirement (build spec §14).
-            let activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
-            activities[sessionId] = activity
-            journeyStates[sessionId] = journey
-            versions[sessionId] = 1
-            refreshLiveIds()
-            print("[TripDemo] started \(sessionId) (Activity.id=\(activity.id))")
-        } catch {
-            print("[TripDemo] Activity.request failed for \(sessionId): \(error)")
+    private func start(deepLinkParameters: [String: String], journey: JourneyState, isPrimary: Bool) {
+        Task {
+            do {
+                let session = try await LiveStage.start(
+                    templateId: templateId,
+                    deepLinkParameters: deepLinkParameters,
+                    state: .journey(journey)
+                )
+                sessions[session.sessionId] = session
+                journeyStates[session.sessionId] = journey
+                if isPrimary || primarySessionId == nil { primarySessionId = session.sessionId }
+                refreshLiveIds()
+                print("[TripDemo] started \(session.sessionId)")
+            } catch {
+                report(error, context: "start")
+            }
         }
     }
 
-    // MARK: - Update (local, forward-version)
+    // MARK: - Update (app-originated; the SDK applies it immediately)
 
-    /// Advances the primary activity's Journey state - proves `Activity.update` re-renders live.
+    /// Advances the primary activity's Journey state - proves `update` re-renders live.
     func updatePrimary() {
-        guard let activity = activities[primaryId],
-              let current = journeyStates[primaryId] else { return }
+        guard let id = primarySessionId, let session = sessions[id], let current = journeyStates[id] else { return }
 
         let nextProgress = min(1.0, (current.progress ?? 0) + 0.25)
         let advanced = JourneyState(
@@ -115,40 +91,46 @@ final class LiveActivityController: ObservableObject {
             targetDate: nextProgress >= 1.0 ? nil : current.targetDate,
             statusText: nextProgress >= 1.0 ? "Arrived" : "Delayed 10 min"
         )
-        let nextVersion = (versions[primaryId] ?? 1) + 1
-        let content = ActivityContent(
-            state: LiveStageContentState(
-                payload: .journey(advanced),
-                metadata: StateMetadata(lastUpdatedAt: Date(), version: nextVersion)
-            ),
-            staleDate: Date().addingTimeInterval(staleAfter)
-        )
-        journeyStates[primaryId] = advanced
-        versions[primaryId] = nextVersion
-
         Task {
-            await activity.update(content)
-            print("[TripDemo] updated \(primaryId) → v\(nextVersion), progress \(nextProgress)")
+            do {
+                try await LiveStage.update(session, state: .journey(advanced))
+                journeyStates[id] = advanced
+                print("[TripDemo] updated \(id) -> progress \(nextProgress)")
+            } catch {
+                report(error, context: "update")
+            }
         }
     }
 
     // MARK: - End
 
     func endAll() {
-        let snapshot = activities
-        activities.removeAll()
-        journeyStates.removeAll()
-        versions.removeAll()
-        refreshLiveIds()
+        let snapshot = Array(sessions.values)
         Task {
-            for (sessionId, activity) in snapshot {
-                await activity.end(nil, dismissalPolicy: .immediate)
-                print("[TripDemo] ended \(sessionId)")
+            for session in snapshot {
+                do {
+                    try await LiveStage.end(session)
+                    print("[TripDemo] ended \(session.sessionId)")
+                } catch {
+                    report(error, context: "end")
+                }
             }
+            sessions.removeAll()
+            journeyStates.removeAll()
+            primarySessionId = nil
+            refreshLiveIds()
         }
     }
 
+    // MARK: - Helpers
+
     private func refreshLiveIds() {
-        liveSessionIds = Array(activities.keys).sorted()
+        liveSessionIds = sessions.keys.sorted()
+    }
+
+    private func report(_ error: Error, context: String) {
+        let message = "\(context): \(error)"
+        lastError = message
+        print("[TripDemo] \(message)")
     }
 }

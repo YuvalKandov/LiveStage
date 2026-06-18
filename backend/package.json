@@ -1,0 +1,25 @@
+{
+  "name": "livestage-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LiveStage backend service (M1: Journey vertical slice).",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "seed": "tsx src/db/seed.ts",
+    "build": "tsc -p .",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "better-sqlite3": "^11.8.1",
+    "fastify": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

@@ -31,6 +31,15 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LiveStageAPIHost</key>
+	<string>$(LIVESTAGE_API_HOST)</string>
+	<key>LiveStageAPIKey</key>
+	<string>$(LIVESTAGE_API_KEY)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
