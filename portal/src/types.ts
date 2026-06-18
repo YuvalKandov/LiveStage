@@ -21,6 +21,26 @@ export interface JourneyPayload {
   targetDate?: string | null;
 }
 
+export interface CountdownPayload {
+  type: "countdown";
+  title: string;
+  subtitle?: string | null;
+  targetDate: string; // ISO-8601, required (tz-aware)
+  statusText?: string | null;
+  location?: string | null;
+}
+
+export interface ProgressPayload {
+  type: "progress";
+  title: string;
+  currentStage?: string | null;
+  progress: number; // required, 0..1
+  estimatedCompletionDate?: string | null;
+  detailText?: string | null;
+}
+
+export type TemplatePayload = JourneyPayload | CountdownPayload | ProgressPayload;
+
 export interface UpdateResult {
   version: number;
   lastUpdatedAt: string;

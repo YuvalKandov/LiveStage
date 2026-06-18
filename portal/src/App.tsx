@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { listActiveSessions, listLogs, updateSession, PortalApiError } from "./api";
-import type { AdminSession, JourneyPayload, LogRow } from "./types";
+import type {
+  AdminSession,
+  CountdownPayload,
+  JourneyPayload,
+  LogRow,
+  ProgressPayload,
+  TemplatePayload,
+} from "./types";
 
 export function App() {
   const [sessions, setSessions] = useState<AdminSession[]>([]);
@@ -35,8 +42,8 @@ export function App() {
     <div className="app">
       <h1>LiveStage Portal</h1>
       <p className="subtitle">
-        M1 developer testing tool — push a typed Journey state to a live session. Admin token is
-        local-demo-only.
+        Developer testing tool — push a typed state (Journey, Countdown, or Progress) to a live
+        session; the form matches the session's template. Admin token is local-demo-only.
       </p>
 
       {loadError && (
@@ -96,37 +103,43 @@ function SessionsPanel(props: {
   );
 }
 
+// The form is typed to the selected session's template (build spec §8.3 / design §09): the right
+// fields render for journey | countdown | progress, and the same PATCH /v1/admin/activities path is
+// used. Switching session resets the form via a `key` on the session id.
 function UpdateForm(props: { session: AdminSession | null; onApplied: () => void }) {
-  const [title, setTitle] = useState("Trip to Rome");
-  const [currentStep, setCurrentStep] = useState("Boarding at gate B12");
-  const [nextStep, setNextStep] = useState("Flight AZ809");
-  const [progress, setProgress] = useState("0.6");
-  const [statusText, setStatusText] = useState("Delayed 10 min");
+  const session = props.session;
+  if (!session) {
+    return (
+      <div className="card">
+        <h2>Synchronize update</h2>
+        <div className="muted">Select a live session on the left to push a new typed state.</div>
+      </div>
+    );
+  }
+  switch (session.type) {
+    case "countdown":
+      return <CountdownForm key={session.sessionId} session={session} onApplied={props.onApplied} />;
+    case "progress":
+      return <ProgressForm key={session.sessionId} session={session} onApplied={props.onApplied} />;
+    default:
+      return <JourneyForm key={session.sessionId} session={session} onApplied={props.onApplied} />;
+  }
+}
+
+/** Shared submit + busy/error/ok state for all three typed forms (one PATCH path, one error model). */
+function useUpdateSubmit(session: AdminSession, onApplied: () => void) {
   const [busy, setBusy] = useState(false);
   const [fieldError, setFieldError] = useState<{ field?: string; message: string } | null>(null);
   const [okMessage, setOkMessage] = useState<string | null>(null);
 
-  const session = props.session;
-
-  async function submit() {
-    if (!session) return;
+  async function submit(payload: TemplatePayload) {
     setBusy(true);
     setFieldError(null);
     setOkMessage(null);
-
-    const payload: JourneyPayload = {
-      type: "journey",
-      title,
-      currentStep,
-      nextStep: nextStep || null,
-      statusText: statusText || null,
-      progress: progress.trim() === "" ? null : Number(progress),
-    };
-
     try {
       const result = await updateSession(session.sessionId, payload);
       setOkMessage(`Applied version ${result.version}. The device should update within one poll (~8s).`);
-      props.onApplied();
+      onApplied();
     } catch (e) {
       if (e instanceof PortalApiError && e.status === 400) {
         setFieldError({ field: e.body.field, message: e.body.message });
@@ -137,50 +150,153 @@ function UpdateForm(props: { session: AdminSession | null; onApplied: () => void
       setBusy(false);
     }
   }
+  return { busy, fieldError, okMessage, submit };
+}
 
-  if (!session) {
-    return (
-      <div className="card">
-        <h2>Synchronize update</h2>
-        <div className="muted">Select a live session on the left to push a new Journey state.</div>
-      </div>
-    );
-  }
-
+/** The card chrome shared by every typed form: header, submit button, inline error/ok. */
+function FormShell(props: {
+  session: AdminSession;
+  busy: boolean;
+  fieldError: { field?: string; message: string } | null;
+  okMessage: string | null;
+  onSubmit: () => void;
+  children: ReactNode;
+}) {
   return (
     <div className="card">
       <h2>Synchronize update</h2>
       <div className="muted" style={{ marginBottom: 8 }}>
-        Session <span className="sid">{session.sessionId.slice(0, 8)}…</span> · current v{session.version}
+        Session <span className="sid">{props.session.sessionId.slice(0, 8)}…</span> · {props.session.type} · current
+        v{props.session.version}
       </div>
 
-      <Field label="Title" value={title} onChange={setTitle} />
-      <Field label="Current step" value={currentStep} onChange={setCurrentStep} />
-      <Field label="Next step (optional)" value={nextStep} onChange={setNextStep} />
-      <Field label="Progress 0–1 (optional; try 1.4 to see a rejection)" value={progress} onChange={setProgress} />
-      <Field label="Status text (optional)" value={statusText} onChange={setStatusText} />
+      {props.children}
 
-      <button className="primary" onClick={submit} disabled={busy}>
-        {busy ? "Synchronizing…" : "Synchronize update"}
+      <button className="primary" onClick={props.onSubmit} disabled={props.busy}>
+        {props.busy ? "Synchronizing…" : "Synchronize update"}
       </button>
 
-      {fieldError && (
+      {props.fieldError && (
         <div className="error">
-          {fieldError.field ? `${fieldError.field}: ` : ""}{fieldError.message}
+          {props.fieldError.field ? `${props.fieldError.field}: ` : ""}
+          {props.fieldError.message}
         </div>
       )}
-      {okMessage && <div className="ok">{okMessage}</div>}
+      {props.okMessage && <div className="ok">{props.okMessage}</div>}
     </div>
   );
 }
 
-function Field(props: { label: string; value: string; onChange: (v: string) => void }) {
+function JourneyForm(props: { session: AdminSession; onApplied: () => void }) {
+  const [title, setTitle] = useState("Trip to Rome");
+  const [currentStep, setCurrentStep] = useState("Boarding at gate B12");
+  const [nextStep, setNextStep] = useState("Flight AZ809");
+  const [progress, setProgress] = useState("0.6");
+  const [statusText, setStatusText] = useState("Delayed 10 min");
+  const { busy, fieldError, okMessage, submit } = useUpdateSubmit(props.session, props.onApplied);
+
+  function onSubmit() {
+    const payload: JourneyPayload = {
+      type: "journey",
+      title,
+      currentStep,
+      nextStep: nextStep || null,
+      statusText: statusText || null,
+      progress: progress.trim() === "" ? null : Number(progress),
+    };
+    submit(payload);
+  }
+
+  return (
+    <FormShell session={props.session} busy={busy} fieldError={fieldError} okMessage={okMessage} onSubmit={onSubmit}>
+      <TextField label="Title" value={title} onChange={setTitle} />
+      <TextField label="Current step" value={currentStep} onChange={setCurrentStep} />
+      <TextField label="Next step (optional)" value={nextStep} onChange={setNextStep} />
+      <TextField label="Progress 0–1 (optional; try 1.4 to see a rejection)" value={progress} onChange={setProgress} />
+      <TextField label="Status text (optional)" value={statusText} onChange={setStatusText} />
+    </FormShell>
+  );
+}
+
+function CountdownForm(props: { session: AdminSession; onApplied: () => void }) {
+  const [title, setTitle] = useState("Flight to Rome");
+  const [subtitle, setSubtitle] = useState("Gate B12");
+  const [targetLocal, setTargetLocal] = useState(defaultLocalDateTime(30));
+  const [statusText, setStatusText] = useState("On time");
+  const [location, setLocation] = useState("Terminal 3");
+  const { busy, fieldError, okMessage, submit } = useUpdateSubmit(props.session, props.onApplied);
+
+  function onSubmit() {
+    const payload: CountdownPayload = {
+      type: "countdown",
+      title,
+      subtitle: subtitle || null,
+      // datetime-local is a local wall-clock value; convert to a tz-aware UTC instant for the backend.
+      targetDate: targetLocal ? new Date(targetLocal).toISOString() : "",
+      statusText: statusText || null,
+      location: location || null,
+    };
+    submit(payload);
+  }
+
+  return (
+    <FormShell session={props.session} busy={busy} fieldError={fieldError} okMessage={okMessage} onSubmit={onSubmit}>
+      <TextField label="Title" value={title} onChange={setTitle} />
+      <TextField label="Subtitle (optional)" value={subtitle} onChange={setSubtitle} />
+      <label>Target date/time (required)</label>
+      <input type="datetime-local" value={targetLocal} onChange={(e) => setTargetLocal(e.target.value)} />
+      <TextField label="Status text (optional)" value={statusText} onChange={setStatusText} />
+      <TextField label="Location (optional)" value={location} onChange={setLocation} />
+    </FormShell>
+  );
+}
+
+function ProgressForm(props: { session: AdminSession; onApplied: () => void }) {
+  const [title, setTitle] = useState("Preparing your order");
+  const [currentStage, setCurrentStage] = useState("Packing");
+  const [progress, setProgress] = useState("0.8");
+  const [etaLocal, setEtaLocal] = useState("");
+  const [detailText, setDetailText] = useState("2 items left");
+  const { busy, fieldError, okMessage, submit } = useUpdateSubmit(props.session, props.onApplied);
+
+  function onSubmit() {
+    const payload: ProgressPayload = {
+      type: "progress",
+      title,
+      currentStage: currentStage || null,
+      progress: Number(progress),
+      estimatedCompletionDate: etaLocal ? new Date(etaLocal).toISOString() : null,
+      detailText: detailText || null,
+    };
+    submit(payload);
+  }
+
+  return (
+    <FormShell session={props.session} busy={busy} fieldError={fieldError} okMessage={okMessage} onSubmit={onSubmit}>
+      <TextField label="Title" value={title} onChange={setTitle} />
+      <TextField label="Current stage (optional)" value={currentStage} onChange={setCurrentStage} />
+      <TextField label="Progress 0–1 (required; try 1.4 to see a rejection)" value={progress} onChange={setProgress} />
+      <label>Estimated completion (optional)</label>
+      <input type="datetime-local" value={etaLocal} onChange={(e) => setEtaLocal(e.target.value)} />
+      <TextField label="Detail text (optional)" value={detailText} onChange={setDetailText} />
+    </FormShell>
+  );
+}
+
+function TextField(props: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <>
       <label>{props.label}</label>
       <input value={props.value} onChange={(e) => props.onChange(e.target.value)} />
     </>
   );
+}
+
+/** A `datetime-local` default `minutesAhead` from now, formatted as the input expects (local time). */
+function defaultLocalDateTime(minutesAhead: number): string {
+  const d = new Date(Date.now() + minutesAhead * 60_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function LogsPanel(props: { logs: LogRow[] }) {

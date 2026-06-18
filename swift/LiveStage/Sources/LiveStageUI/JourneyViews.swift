@@ -91,13 +91,15 @@ enum JourneyViews {
 
     @ViewBuilder
     static func compactTrailing(_ state: JourneyState, attributes: LiveStageActivityAttributes) -> some View {
+        // Consistent compact-trailing style across all templates: size-to-content, no width cap
+        // (so a long countdown like "1:41:50" isn't truncated).
         switch TrailingContent.resolve(state, allowStatus: true) {
         case .countdown(let date):
-            CountdownText(date: date).font(.system(size: 15, weight: .semibold)).frame(maxWidth: 54)
+            CountdownText(date: date).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
         case .percent(let p):
-            Text(percentString(p)).font(.system(size: 15, weight: .semibold)).monospacedDigit()
+            Text(percentString(p)).font(.system(size: 15, weight: .semibold)).monospacedDigit().foregroundStyle(.white)
         case .status(let text):
-            Text(text).font(.system(size: 13, weight: .medium)).lineLimit(1)
+            Text(text).font(.system(size: 13, weight: .medium)).foregroundStyle(.white).lineLimit(1)
         case .iconOnly:
             EmptyView()
         }
@@ -129,7 +131,7 @@ enum JourneyViews {
                     .foregroundStyle(attributes.accentStyle.color)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(state.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text(state.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
                 Text(state.currentStep).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
@@ -155,6 +157,7 @@ enum JourneyViews {
                 .font(.system(size: 17, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(attributes.accentStyle.color)
+                .fixedSize()                   // keep the % at its natural width (don't clip the left digit)
         }
     }
 

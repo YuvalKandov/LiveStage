@@ -31,17 +31,27 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Journey activity (M1 - server-backed via the SDK)") {
+                Section("Start a template (server-backed via the SDK)") {
                     Button {
-                        controller.startPrimary()
+                        controller.startJourney()
                     } label: {
-                        Label("Start", systemImage: "play.fill")
+                        Label("Start Journey", systemImage: "airplane")
+                    }
+                    Button {
+                        controller.startCountdown()
+                    } label: {
+                        Label("Start Countdown (target +25s)", systemImage: "timer")
+                    }
+                    Button {
+                        controller.startProgress()
+                    } label: {
+                        Label("Start Progress", systemImage: "shippingbox")
                     }
 
                     Button {
                         controller.updatePrimary()
                     } label: {
-                        Label("Update", systemImage: "arrow.clockwise")
+                        Label("Update latest", systemImage: "arrow.clockwise")
                     }
                     .disabled(controller.primarySessionId == nil)
 
@@ -56,12 +66,26 @@ struct ContentView: View {
 
                 Section {
                     Button {
-                        controller.startSecond()
+                        controller.startSecondJourney()
                     } label: {
                         Label("Start second activity", systemImage: "plus.square.on.square")
                     }
+                } header: {
+                    Text("Minimal presentation (needs 2+ activities)")
                 } footer: {
-                    Text("The minimal Dynamic Island presentation appears only when Live Activities from two DIFFERENT apps are live (e.g. this one + a Clock timer). Two activities from this same app stack on the Lock Screen but don't reliably show minimal in the Island.")
+                    Text("The minimal Dynamic Island circle only appears when 2+ Live Activities are live. Start two here (e.g. Journey + Countdown) to verify minimal. Countdown's zero-flip: start it, then DO NOT touch the app - at 0:00 it flips to \"Boarding now\".")
+                }
+
+                Section {
+                    Button {
+                        controller.startStaleDemo()
+                    } label: {
+                        Label("Start stale demo (20s)", systemImage: "bell")
+                    }
+                } header: {
+                    Text("Stale handling (debug)")
+                } footer: {
+                    Text("Start it and wait ~20s without tapping Update. The Lock Screen / expanded view de-emphasize and show \"May be outdated\". Tap \"Update latest\" to restore the normal look.")
                 }
 
                 if let error = controller.lastError {
@@ -78,8 +102,8 @@ struct ContentView: View {
         // Dynamic Island presentation can be verified without manual taps. No effect normally.
         .task {
             if ProcessInfo.processInfo.arguments.contains("-autostartTwo") {
-                controller.startPrimary()
-                controller.startSecond()
+                controller.startJourney()
+                controller.startSecondJourney()
             }
         }
     }

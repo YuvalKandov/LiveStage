@@ -41,6 +41,10 @@ export function getTemplate(db: Database, projectId: string, templateId: string)
     .prepare(`SELECT * FROM templates WHERE project_id = ? AND template_id = ?`)
     .get(projectId, templateId) as TemplateRow | undefined;
   if (!row) throw new HttpError(404, "template_not_found", `No template "${templateId}" in this project.`);
+  // Single place that folds the internal `zero_state_label` column into `labels.zeroStateLabel`,
+  // so every consumer (template responses, frozen attributes_json) sees one source of truth.
+  const labels = JSON.parse(row.labels_json) as TemplateLabels;
+  labels.zeroStateLabel = row.zero_state_label ?? null;
   return {
     templateId: row.template_id,
     templateType: row.type as TemplateType,
@@ -48,8 +52,7 @@ export function getTemplate(db: Database, projectId: string, templateId: string)
     icon: row.icon,
     accentStyle: row.accent as AccentStyle,
     deepLinkBase: row.deep_link_base,
-    labels: JSON.parse(row.labels_json) as TemplateLabels,
-    zeroStateLabel: row.zero_state_label,
+    labels,
     staleAfterSeconds: row.stale_after_seconds,
   };
 }

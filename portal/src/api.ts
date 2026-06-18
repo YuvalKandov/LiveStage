@@ -1,5 +1,5 @@
 import { API_BASE, ADMIN_TOKEN } from "./config";
-import type { AdminSession, ApiError, JourneyPayload, LogRow, UpdateResult } from "./types";
+import type { AdminSession, ApiError, LogRow, TemplatePayload, UpdateResult } from "./types";
 
 /** An error that carries the backend's structured { error, message, field } (e.g. a 400 validation). */
 export class PortalApiError extends Error {
@@ -31,7 +31,7 @@ export function listActiveSessions(): Promise<{ sessions: AdminSession[] }> {
 }
 
 /** The "Synchronize update" call: PATCH /v1/admin/activities/:id with a payload + a fresh mutation id. */
-export function updateSession(sessionId: string, payload: JourneyPayload): Promise<UpdateResult> {
+export function updateSession(sessionId: string, payload: TemplatePayload): Promise<UpdateResult> {
   return adminFetch(`/v1/admin/activities/${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
     body: JSON.stringify({ mutationId: crypto.randomUUID(), payload }),

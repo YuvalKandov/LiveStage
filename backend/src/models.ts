@@ -14,6 +14,9 @@ export interface TemplateLabels {
   targetLabel?: string | null;
   countdownLabel?: string | null;
   completionLabel?: string | null;
+  // Countdown only: the zero label, single source of truth. The repo folds the `zero_state_label`
+  // DB column into here so the renderer (which only sees attributes) can reach it.
+  zeroStateLabel?: string | null;
 }
 
 export interface TemplateConfiguration {
@@ -24,7 +27,6 @@ export interface TemplateConfiguration {
   accentStyle: AccentStyle;
   deepLinkBase: string;
   labels: TemplateLabels;
-  zeroStateLabel?: string | null;
   staleAfterSeconds: number;
 }
 

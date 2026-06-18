@@ -5,10 +5,10 @@ import { HttpError, nowIso, stableHash } from "../util";
 import { requireMobileKey } from "../auth/middleware";
 import { getSession, getTemplate, currentState } from "../repo";
 import { composeDeepLink } from "../deeplink";
-import { validatePayload } from "../validation/journey";
+import { validatePayload } from "../validation/index";
 import { applyUpdate } from "../services/updateService";
 import { writeLog } from "../logs";
-import type { ActivityAttributes } from "../models";
+import type { ActivityAttributes, TemplateType } from "../models";
 
 /** Runs `fn`; if it throws a 400 (validation/deep-link), writes a `reject` log first, then rethrows. */
 function withRejectLog<T>(
@@ -144,7 +144,7 @@ export function registerActivityRoutes(app: FastifyInstance, db: Database): void
 
     const session = getSession(db, key.projectId, sessionId);
     const payload = withRejectLog(db, key.projectId, sessionId, () =>
-      validatePayload(body.payload, session.type as "journey"),
+      validatePayload(body.payload, session.type as TemplateType),
     );
 
     const result = applyUpdate(db, { sessionId, clientMutationId: body.clientMutationId, payload });

@@ -14,6 +14,8 @@ actor LiveStageRuntime {
     private var deepLinkURLs: [String: String] = [:]            // sessionId -> composed primary URL
     private var sessionTemplates: [String: String] = [:]
     private var pollTasks: [String: Task<Void, Never>] = [:]
+    private var lastAppliedContent: [String: LiveStageContentState] = [:]   // for the countdown zero-transition
+    private var zeroTransitionTasks: [String: Task<Void, Never>] = [:]
 
     #if os(iOS)
     private let bridge = ActivityBridge()
@@ -90,6 +92,8 @@ actor LiveStageRuntime {
             try? await api.end(sessionId: resp.sessionId, reason: "activitykit_request_failed")
             throw error
         }
+        lastAppliedContent[resp.sessionId] = contentState
+        scheduleZeroTransition(sessionId: resp.sessionId)
         #endif
 
         appliedVersions[resp.sessionId] = resp.version
@@ -114,6 +118,8 @@ actor LiveStageRuntime {
         let staleDate = resp.lastUpdatedAt.addingTimeInterval(TimeInterval(staleSecs))
         #if os(iOS)
         await bridge.update(sessionId: session.sessionId, state: resp.state, staleDate: staleDate)
+        lastAppliedContent[session.sessionId] = resp.state
+        scheduleZeroTransition(sessionId: session.sessionId)
         #endif
         appliedVersions[session.sessionId] = resp.version
     }
@@ -185,6 +191,8 @@ actor LiveStageRuntime {
         let staleDate = resp.lastUpdatedAt.addingTimeInterval(TimeInterval(staleSecs))
         #if os(iOS)
         await bridge.update(sessionId: sessionId, state: resp.state, staleDate: staleDate)
+        lastAppliedContent[sessionId] = resp.state
+        scheduleZeroTransition(sessionId: sessionId)
         #endif
         appliedVersions[sessionId] = resp.version
     }
@@ -194,7 +202,45 @@ actor LiveStageRuntime {
         staleAfterSeconds.removeValue(forKey: sessionId)
         deepLinkURLs.removeValue(forKey: sessionId)
         sessionTemplates.removeValue(forKey: sessionId)
+        lastAppliedContent.removeValue(forKey: sessionId)
+        zeroTransitionTasks[sessionId]?.cancel()
+        zeroTransitionTasks.removeValue(forKey: sessionId)
     }
+
+    // MARK: - Countdown zero-transition (a single local re-render at the target, no per-second pushes)
+
+    #if os(iOS)
+    /// Schedules ONE local re-render at a Countdown's `targetDate`. The renderer flips from the system
+    /// countdown to `zeroStateLabel` only when its enclosing SwiftUI branch is re-evaluated, and that
+    /// branch is NOT re-evaluated on its own when `Text(timerInterval:)` reaches zero (verified in the
+    /// M2 simulator spike). So at the target we re-apply the current content once via `Activity.update`,
+    /// forcing the re-render. This is a single semantic transition — never a per-second update — and
+    /// makes no server call. Re-scheduled whenever new content is applied (the target can change); a
+    /// no-op for non-countdown payloads or a target already in the past.
+    private func scheduleZeroTransition(sessionId: String) {
+        zeroTransitionTasks[sessionId]?.cancel()
+        zeroTransitionTasks.removeValue(forKey: sessionId)
+        guard let content = lastAppliedContent[sessionId],
+              case .countdown(let state) = content.payload else { return }
+        let interval = state.targetDate.timeIntervalSinceNow
+        guard interval > 0 else { return }   // already at/after zero: the applied content already shows it
+        zeroTransitionTasks[sessionId] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            if Task.isCancelled { return }
+            await self?.fireZeroTransition(sessionId: sessionId)
+        }
+    }
+
+    /// Re-pushes the current content so ActivityKit re-renders; the renderer's `targetDate > now`
+    /// branch now takes the `zeroStateLabel` path. No version bump, no network.
+    private func fireZeroTransition(sessionId: String) async {
+        zeroTransitionTasks.removeValue(forKey: sessionId)
+        guard let content = lastAppliedContent[sessionId] else { return }
+        let staleSecs = staleAfterSeconds[sessionId] ?? 900
+        let staleDate = content.metadata.lastUpdatedAt.addingTimeInterval(TimeInterval(staleSecs))
+        await bridge.update(sessionId: sessionId, state: content, staleDate: staleDate)
+    }
+    #endif
 
     private func strippingSource(_ url: URL) -> String {
         guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }

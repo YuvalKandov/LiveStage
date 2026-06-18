@@ -121,4 +121,26 @@ final class TemplatePayloadCodableTests: XCTestCase {
         let decoded = try JSONDecoder().decode(LiveStageContentState.self, from: data)
         XCTAssertEqual(decoded, original)
     }
+
+    // MARK: - Test 5: zeroStateLabel is a field of TemplateLabels (single source of truth, M2).
+
+    func testTemplateLabelsCarryZeroStateLabel() throws {
+        let labels = TemplateLabels(countdownLabel: "Boarding in", zeroStateLabel: "Boarding now")
+        let config = TemplateConfiguration(
+            templateId: "flight-countdown", templateType: .countdown, displayName: "Flight countdown",
+            icon: "clock", accentStyle: .orange, deepLinkBase: "triptogether://flight",
+            labels: labels, staleAfterSeconds: 900
+        )
+
+        let data = try LiveStageJSON.encoder.encode(config)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // zeroStateLabel lives inside labels, not at the top level of the configuration.
+        XCTAssertNil(object["zeroStateLabel"], "zeroStateLabel must not be a top-level config field")
+        let labelsObject = try XCTUnwrap(object["labels"] as? [String: Any])
+        XCTAssertEqual(labelsObject["zeroStateLabel"] as? String, "Boarding now")
+
+        let decoded = try LiveStageJSON.decoder.decode(TemplateConfiguration.self, from: data)
+        XCTAssertEqual(decoded, config)
+        XCTAssertEqual(decoded.labels.zeroStateLabel, "Boarding now")
+    }
 }

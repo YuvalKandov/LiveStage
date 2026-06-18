@@ -3,34 +3,28 @@ import Foundation
 import LiveStage
 import LiveStageModels
 
-/// M1 drives Live Activities through the **LiveStage SDK** (`start`/`update`/`end`), not ActivityKit
-/// directly (that was M0). The SDK talks to the local backend, requests the activity, and runs the
-/// 8s poller so portal/backend updates flow in. ActivityKit is imported here only for the
-/// `areActivitiesEnabled` capability check shown in the UI.
+/// Drives Live Activities through the **LiveStage SDK** (`start`/`update`/`end`), not ActivityKit
+/// directly. The SDK talks to the local backend, requests the activity, runs the 8s poller, and (for
+/// Countdown) schedules the single zero-transition re-render. M2 drives all three templates; the
+/// controller tracks the last applied payload per session so "Update" can advance it forward by type.
 @MainActor
 final class LiveActivityController: ObservableObject {
 
-    /// Session ids of the currently-live activities (drives the UI).
     @Published private(set) var liveSessionIds: [String] = []
-    /// The id used by the "Update" button (the first activity started).
+    /// The session the "Update" button advances - always the most recently started activity.
     @Published private(set) var primarySessionId: String?
-    /// Last error surfaced to the developer (e.g. backend down, validation rejected).
     @Published var lastError: String?
 
     private var sessions: [String: LiveStageSession] = [:]
-    /// The mutable Journey state per session, so "Update" can advance it forward.
-    private var journeyStates: [String: JourneyState] = [:]
-
-    private let templateId = "trip-status"
+    private var lastPayloads: [String: TemplatePayload] = [:]
 
     var areActivitiesEnabled: Bool {
         ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    // MARK: - Start
+    // MARK: - Start (one per template; the design-doc sample states)
 
-    /// Starts the primary Journey activity (design §04 sample) through the SDK.
-    func startPrimary() {
+    func startJourney() {
         let journey = JourneyState(
             title: "Trip to Rome",
             currentStep: "Heading to the airport",
@@ -39,13 +33,12 @@ final class LiveActivityController: ObservableObject {
             targetDate: Date().addingTimeInterval(102 * 60),  // ~1h 42m, per the design sample
             statusText: "On time"
         )
-        start(deepLinkParameters: ["tripId": "123"], journey: journey, isPrimary: true)
+        start(templateId: "trip-status", deepLinkParameters: ["tripId": "123"], payload: .journey(journey))
     }
 
-    /// Starts a SECOND activity (different trip). Two same-app activities stack on the Lock Screen;
-    /// iOS 26 does not reliably show the second as a minimal in the Dynamic Island (that needs two
-    /// DIFFERENT apps, e.g. this one + a Clock timer).
-    func startSecond() {
+    /// A SECOND activity (different trip). Two same-app activities stack on the Lock Screen; the
+    /// minimal Dynamic Island presentation appears when 2+ activities are live.
+    func startSecondJourney() {
         let journey = JourneyState(
             title: "Drive to Florence",
             currentStep: "Picking up the rental",
@@ -54,51 +47,112 @@ final class LiveActivityController: ObservableObject {
             targetDate: Date().addingTimeInterval(38 * 60),
             statusText: "Light traffic"
         )
-        start(deepLinkParameters: ["tripId": "456"], journey: journey, isPrimary: false)
+        start(templateId: "trip-status", deepLinkParameters: ["tripId": "456"], payload: .journey(journey))
     }
 
-    private func start(deepLinkParameters: [String: String], journey: JourneyState, isPrimary: Bool) {
+    /// Countdown with a target ~25s out, so the zero-flip to `zeroStateLabel` ("Boarding now") is
+    /// observable quickly. The SDK fires one local re-render at the target (no per-second pushes).
+    func startCountdown() {
+        let countdown = CountdownState(
+            title: "Flight to Rome",
+            subtitle: "Gate B12",
+            targetDate: Date().addingTimeInterval(25),
+            statusText: "Boarding soon",
+            location: "Terminal 3"
+        )
+        start(templateId: "flight-countdown", deepLinkParameters: ["flightId": "AZ809"], payload: .countdown(countdown))
+    }
+
+    func startProgress() {
+        let progress = ProgressState(
+            title: "Preparing your order",
+            currentStage: "Packing",
+            progress: 0.72,
+            estimatedCompletionDate: Date().addingTimeInterval(18 * 60),
+            detailText: "3 items left"
+        )
+        start(templateId: "order-progress", deepLinkParameters: ["orderId": "42"], payload: .progress(progress))
+    }
+
+    /// Debug: the short-stale template (staleAfterSeconds=20). Start it and wait ~20s without an
+    /// update to see the stale de-emphasis + hint; then tap Update to restore the normal look.
+    func startStaleDemo() {
+        let journey = JourneyState(
+            title: "Stale demo",
+            currentStep: "Waiting for an update",
+            progress: 0.4,
+            statusText: "Fresh"
+        )
+        start(templateId: "stale-demo", deepLinkParameters: ["tripId": "stale"], payload: .journey(journey))
+    }
+
+    private func start(templateId: String, deepLinkParameters: [String: String], payload: TemplatePayload) {
         Task {
             do {
                 let session = try await LiveStage.start(
                     templateId: templateId,
                     deepLinkParameters: deepLinkParameters,
-                    state: .journey(journey)
+                    state: payload
                 )
                 sessions[session.sessionId] = session
-                journeyStates[session.sessionId] = journey
-                if isPrimary || primarySessionId == nil { primarySessionId = session.sessionId }
+                lastPayloads[session.sessionId] = payload
+                primarySessionId = session.sessionId   // the latest started is what "Update" advances
                 refreshLiveIds()
-                print("[TripDemo] started \(session.sessionId)")
+                print("[TripDemo] started \(templateId) \(session.sessionId)")
             } catch {
                 report(error, context: "start")
             }
         }
     }
 
-    // MARK: - Update (app-originated; the SDK applies it immediately)
+    // MARK: - Update (advance the primary session's state forward, by template type)
 
-    /// Advances the primary activity's Journey state - proves `update` re-renders live.
     func updatePrimary() {
-        guard let id = primarySessionId, let session = sessions[id], let current = journeyStates[id] else { return }
-
-        let nextProgress = min(1.0, (current.progress ?? 0) + 0.25)
-        let advanced = JourneyState(
-            title: current.title,
-            currentStep: nextProgress >= 1.0 ? "Arrived" : "Boarding at gate B12",
-            nextStep: nextProgress >= 1.0 ? nil : "Flight AZ809",
-            progress: nextProgress,
-            targetDate: nextProgress >= 1.0 ? nil : current.targetDate,
-            statusText: nextProgress >= 1.0 ? "Arrived" : "Delayed 10 min"
-        )
+        guard let id = primarySessionId, let session = sessions[id], let current = lastPayloads[id] else { return }
+        let next = Self.advance(current)
         Task {
             do {
-                try await LiveStage.update(session, state: .journey(advanced))
-                journeyStates[id] = advanced
-                print("[TripDemo] updated \(id) -> progress \(nextProgress)")
+                try await LiveStage.update(session, state: next)
+                lastPayloads[id] = next
+                print("[TripDemo] updated \(id)")
             } catch {
                 report(error, context: "update")
             }
+        }
+    }
+
+    /// Produces the next forward state for a payload, per its type (proves `update` re-renders live).
+    private static func advance(_ payload: TemplatePayload) -> TemplatePayload {
+        switch payload {
+        case .journey(let s):
+            let p = min(1.0, (s.progress ?? 0) + 0.25)
+            return .journey(JourneyState(
+                title: s.title,
+                currentStep: p >= 1 ? "Arrived" : "Boarding at gate B12",
+                nextStep: p >= 1 ? nil : "Flight AZ809",
+                progress: p,
+                targetDate: p >= 1 ? nil : s.targetDate,
+                statusText: p >= 1 ? "Arrived" : "Delayed 10 min"
+            ))
+        case .countdown(let s):
+            // Bring the target close (final call) - also proves a completed countdown stays updateable.
+            return .countdown(CountdownState(
+                title: s.title,
+                subtitle: s.subtitle,
+                targetDate: Date().addingTimeInterval(10),
+                statusText: "Final call",
+                location: s.location
+            ))
+        case .progress(let s):
+            let p = min(1.0, s.progress + 0.25)
+            let remaining = Int((1 - p) * 10)
+            return .progress(ProgressState(
+                title: s.title,
+                currentStage: p >= 1 ? "Done" : "Packing",
+                progress: p,
+                estimatedCompletionDate: s.estimatedCompletionDate,
+                detailText: p >= 1 ? nil : "\(remaining) items left"
+            ))
         }
     }
 
@@ -116,7 +170,7 @@ final class LiveActivityController: ObservableObject {
                 }
             }
             sessions.removeAll()
-            journeyStates.removeAll()
+            lastPayloads.removeAll()
             primarySessionId = nil
             refreshLiveIds()
         }

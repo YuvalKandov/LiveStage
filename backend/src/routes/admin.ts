@@ -3,10 +3,11 @@ import type { FastifyInstance } from "fastify";
 import type { Database } from "better-sqlite3";
 import { HttpError } from "../util";
 import { requireAdmin } from "../auth/middleware";
-import { validatePayload } from "../validation/journey";
+import { validatePayload } from "../validation/index";
 import { applyUpdate } from "../services/updateService";
 import { writeLog } from "../logs";
 import type { SessionRow } from "../repo";
+import type { TemplateType } from "../models";
 
 export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
   // GET /v1/admin/activities?status=active — sessions list for the portal. The canonical status
@@ -56,7 +57,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
     let payload;
     try {
-      payload = validatePayload(body.payload, session.type as "journey");
+      payload = validatePayload(body.payload, session.type as TemplateType);
     } catch (e) {
       if (e instanceof HttpError && e.status === 400) {
         writeLog(db, {

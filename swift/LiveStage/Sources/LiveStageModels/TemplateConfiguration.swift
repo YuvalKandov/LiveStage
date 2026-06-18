@@ -13,8 +13,9 @@ public struct TemplateConfiguration: Codable, Hashable, Sendable {
     public let icon: String
     public let accentStyle: AccentStyle
     public let deepLinkBase: String
+    /// Static wording for the template. The Countdown zero label lives in `labels.zeroStateLabel`
+    /// (single source of truth) - the server folds the `zero_state_label` DB column into it.
     public let labels: TemplateLabels
-    public let zeroStateLabel: String?
     public let staleAfterSeconds: Int
 
     public init(
@@ -25,7 +26,6 @@ public struct TemplateConfiguration: Codable, Hashable, Sendable {
         accentStyle: AccentStyle,
         deepLinkBase: String,
         labels: TemplateLabels,
-        zeroStateLabel: String? = nil,
         staleAfterSeconds: Int = 900
     ) {
         self.templateId = templateId
@@ -35,7 +35,6 @@ public struct TemplateConfiguration: Codable, Hashable, Sendable {
         self.accentStyle = accentStyle
         self.deepLinkBase = deepLinkBase
         self.labels = labels
-        self.zeroStateLabel = zeroStateLabel
         self.staleAfterSeconds = staleAfterSeconds
     }
 }
