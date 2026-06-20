@@ -15,6 +15,15 @@ export function requireMobileKey(db: Database, req: FastifyRequest): ResolvedKey
   return resolveKey(db, bearerToken(req.headers.authorization), "mobile");
 }
 
+/**
+ * Resolves the request's service key (used by all Insights routes, build spec §12). A missing key is
+ * 401; a `mobile` key is 403 — the Insights plane is read-only and never accepts the shippable key.
+ * (Conversely the activity-mutation routes use `requireMobileKey`, so a service key is 403 there.)
+ */
+export function requireServiceKey(db: Database, req: FastifyRequest): ResolvedKey {
+  return resolveKey(db, bearerToken(req.headers.authorization), "service");
+}
+
 /** Verifies the local-demo admin token (used by all /v1/admin routes). */
 export function requireAdmin(req: FastifyRequest): void {
   const token = bearerToken(req.headers.authorization);

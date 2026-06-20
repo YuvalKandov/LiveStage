@@ -46,6 +46,11 @@ struct EndRequest: Encodable {
     let reason: String?
 }
 
+/// Batch event upload body (build spec §8.3). The response type lives in `EventUploader`.
+struct BatchUploadRequest: Encodable {
+    let events: [AnalyticsEvent]
+}
+
 struct APIErrorBody: Decodable {
     let error: String?
     let message: String?
@@ -101,6 +106,12 @@ struct APIClient: Sendable {
 
     func fetchConfiguration(templateId: String) async throws -> TemplateConfiguration {
         try await send(path: "/v1/templates/\(pathEscaped(templateId))", method: "GET", body: nil)
+    }
+
+    /// Uploads a batch of analytics events. The server dedupes by `eventId`, so a resend is safe.
+    func uploadEvents(_ events: [AnalyticsEvent]) async throws -> BatchUploadResponse {
+        let body = try Self.encoder.encode(BatchUploadRequest(events: events))
+        return try await send(path: "/v1/events/batch", method: "POST", body: body)
     }
 
     // MARK: - Core request + retry

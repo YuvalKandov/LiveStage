@@ -28,3 +28,19 @@ enum SyncDecision {
         incoming > applied
     }
 }
+
+/// Classifies whether a failed `update` is a true synchronization failure (build spec §4.8/§8.6).
+/// `sync_failed` is **narrow**: it covers transport (`.network`) and server (`.server`: 5xx/401/403)
+/// failures only. A server-**rejected** update — `.validation` (400), `.alreadyEnded` (409), a
+/// `.versionConflict`, or a `.sessionNotFound` — is measured server-side as a rejected update and is
+/// **not** a sync failure. Decoding is a separate breakdown. Pure, so it is unit-tested directly.
+enum SyncFailureClassifier {
+    /// The `reason` qualifier for a `sync_failed` event, or nil when the error is not a sync failure.
+    static func failureReason(for error: Error) -> String? {
+        switch error {
+        case LiveStageError.network: return "network"
+        case LiveStageError.server:  return "server"
+        default:                     return nil
+        }
+    }
+}

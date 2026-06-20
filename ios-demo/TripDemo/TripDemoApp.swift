@@ -12,7 +12,8 @@ struct TripDemoApp: App {
         WindowGroup {
             ContentView()
                 // Route LiveStage deep links through the SDK. handleDeepLink returns the matched
-                // session + parameters + source (interaction-event recording arrives in M3).
+                // session + parameters + source, and records the interaction (activity_opened for a
+                // primary tap, expanded_action_tapped for the expanded Link).
                 .onOpenURL { url in
                     Task {
                         if let route = try? await LiveStage.handleDeepLink(url) {

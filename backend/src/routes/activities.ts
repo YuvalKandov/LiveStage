@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "better-sqlite3";
-import { HttpError, nowIso, stableHash } from "../util";
+import { HttpError, isoDate, nowIso, stableHash } from "../util";
 import { requireMobileKey } from "../auth/middleware";
 import { getSession, getTemplate, currentState } from "../repo";
 import { composeDeepLink } from "../deeplink";
 import { validatePayload } from "../validation/index";
-import { applyUpdate } from "../services/updateService";
+import { applyUpdate, rejectUpdate } from "../services/updateService";
+import { bumpDaily } from "../analytics/daily";
 import { writeLog } from "../logs";
 import type { ActivityAttributes, TemplateType } from "../models";
 
@@ -114,6 +115,10 @@ export function registerActivityRoutes(app: FastifyInstance, db: Database): void
 
       writeLog(db, { projectId: key.projectId, sessionId, kind: "start", detail: template.templateId, status: "ok" });
 
+      // [server-op] count this real session start (an idempotent-replay return above never reaches
+      // here, so a retried start can't double-count). Same transaction as the raw write (§8.6).
+      bumpDaily(db, { projectId: key.projectId, templateId: template.templateId, date: isoDate(now), column: "sessions_started" });
+
       if (idempotencyKey) {
         db.prepare(
           `INSERT INTO start_idempotency (key, project_id, session_id, request_hash, created_at)
@@ -143,12 +148,33 @@ export function registerActivityRoutes(app: FastifyInstance, db: Database): void
     }
 
     const session = getSession(db, key.projectId, sessionId);
-    const payload = withRejectLog(db, key.projectId, sessionId, () =>
-      validatePayload(body.payload, session.type as TemplateType),
-    );
+    const reject = (reason: string) =>
+      rejectUpdate(db, {
+        projectId: key.projectId,
+        templateId: session.template_id,
+        sessionId,
+        mutationId: body.clientMutationId!,
+        reason,
+      });
 
-    const result = applyUpdate(db, { sessionId, clientMutationId: body.clientMutationId, payload });
-    return reply.send({ version: result.version, lastUpdatedAt: result.lastUpdatedAt, state: result.state });
+    // A validation (400) rejection is a server-rejected update: count it (deduped by mutation id)
+    // and reject. It is NOT a sync_failed — those are transport/server failures (build spec §8.6).
+    let payload;
+    try {
+      payload = validatePayload(body.payload, session.type as TemplateType);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 400) reject(`${e.field ? e.field + ": " : ""}${e.message}`);
+      throw e;
+    }
+
+    // A lifecycle (409 ended) rejection is also a server-rejected update.
+    try {
+      const result = applyUpdate(db, { sessionId, clientMutationId: body.clientMutationId, payload });
+      return reply.send({ version: result.version, lastUpdatedAt: result.lastUpdatedAt, state: result.state });
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 409) reject(e.code);
+      throw e;
+    }
   });
 
   // GET /v1/activities/:sessionId — poll. Returns the full current LiveStageContentState.
@@ -187,6 +213,9 @@ export function registerActivityRoutes(app: FastifyInstance, db: Database): void
         detail: body.reason ?? null,
         status: "ok",
       });
+      // [server-op] count the active->ended transition only (the already-ended path returns above,
+      // so a retried end can't double-count). Same transaction as the raw write (§8.6).
+      bumpDaily(db, { projectId: key.projectId, templateId: session.template_id, date: isoDate(now), column: "sessions_ended" });
     })();
     return reply.send({ status: "ended", endedAt: now, alreadyEnded: false });
   });

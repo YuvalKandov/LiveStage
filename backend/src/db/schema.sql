@@ -76,6 +76,20 @@ CREATE TABLE IF NOT EXISTS start_idempotency (
   FOREIGN KEY (session_id) REFERENCES activity_sessions(id)
 );
 
+-- Rejected logical mutations (build spec §8.6). One row per (session, clientMutationId) so a retried
+-- rejected PATCH is counted once. Mirrors session_states' UNIQUE(session_id, mutation_id) for the
+-- accepted side, making the update-rejection rate an honestly idempotent ratio.
+CREATE TABLE IF NOT EXISTS rejected_mutations (
+  session_id TEXT NOT NULL,
+  mutation_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  reason TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (session_id, mutation_id),
+  FOREIGN KEY (session_id) REFERENCES activity_sessions(id)
+);
+
 CREATE TABLE IF NOT EXISTS logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id TEXT,

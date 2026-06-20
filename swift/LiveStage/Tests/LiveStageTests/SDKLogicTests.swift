@@ -29,16 +29,42 @@ final class SDKLogicTests: XCTestCase {
 
     // MARK: - Deep-link parsing (source detection + strip)
 
-    func testParsePrimaryTap() throws {
-        let parsed = try XCTUnwrap(DeepLink.parse(URL(string: "triptogether://trip?tripId=123")!))
-        XCTAssertEqual(parsed.source, .primary)
-        XCTAssertEqual(parsed.parameters, ["tripId": "123"])
+    func testParseActivityOpen() throws {
+        let parsed = try XCTUnwrap(DeepLink.parse(URL(string: "triptogether://trip?tripId=123&source=activity_open")!))
+        XCTAssertEqual(parsed.interaction, .activityOpen)
+        XCTAssertEqual(parsed.parameters, ["tripId": "123"], "the internal source must be stripped")
     }
 
     func testParseExpandedActionStripsSource() throws {
         let parsed = try XCTUnwrap(DeepLink.parse(URL(string: "triptogether://trip?tripId=123&source=expanded_action")!))
-        XCTAssertEqual(parsed.source, .expandedAction)
+        XCTAssertEqual(parsed.interaction, .expandedAction)
         XCTAssertEqual(parsed.parameters, ["tripId": "123"], "source must be stripped from parameters")
+    }
+
+    func testParseNoSourceIsUnspecified() throws {
+        let parsed = try XCTUnwrap(DeepLink.parse(URL(string: "triptogether://trip?tripId=123")!))
+        XCTAssertEqual(parsed.interaction, .unspecified, "a source-less link is never a Live Activity open")
+        XCTAssertEqual(parsed.parameters, ["tripId": "123"])
+    }
+
+    func testParseUnknownSourceIsUnspecifiedAndStripped() throws {
+        let parsed = try XCTUnwrap(DeepLink.parse(URL(string: "triptogether://trip?tripId=123&source=banana")!))
+        XCTAssertEqual(parsed.interaction, .unspecified)
+        XCTAssertEqual(parsed.parameters, ["tripId": "123"], "any source value is stripped from the public route")
+    }
+
+    func testHandleDeepLinkReturnsNilWhenNoSessionMatches() async throws {
+        // Even with a valid source, a URL matching no known LiveStage session is not an open: it
+        // returns nil and records nothing (no arbitrary link is classified as a Live Activity open).
+        let runtime = LiveStageRuntime(config: ConfigStore())
+        let route = try await runtime.handleDeepLink(URL(string: "triptogether://trip?tripId=999&source=activity_open")!)
+        XCTAssertNil(route)
+    }
+
+    func testHandleDeepLinkReturnsNilForSchemelessURL() async throws {
+        let runtime = LiveStageRuntime(config: ConfigStore())
+        let route = try await runtime.handleDeepLink(URL(string: "not-a-deep-link")!)
+        XCTAssertNil(route)
     }
 
     // MARK: - Forward-only sync decision (build spec §9)

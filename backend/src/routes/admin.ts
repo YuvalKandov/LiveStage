@@ -4,8 +4,7 @@ import type { Database } from "better-sqlite3";
 import { HttpError } from "../util";
 import { requireAdmin } from "../auth/middleware";
 import { validatePayload } from "../validation/index";
-import { applyUpdate } from "../services/updateService";
-import { writeLog } from "../logs";
+import { applyUpdate, rejectUpdate } from "../services/updateService";
 import type { SessionRow } from "../repo";
 import type { TemplateType } from "../models";
 
@@ -54,25 +53,33 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
 
     // A mutation id keeps admin updates retry-safe too; generate one if the portal didn't supply it.
     const clientMutationId = body.clientMutationId ?? body.mutationId ?? randomUUID();
+    const reject = (reason: string) =>
+      rejectUpdate(db, {
+        projectId: session.project_id,
+        templateId: session.template_id,
+        sessionId,
+        mutationId: clientMutationId,
+        reason,
+      });
 
+    // Same validation + counters as the SDK PATCH (build spec §8.6): a 400 is a server-rejected
+    // update, counted via rejected_updates; a 409 ended is the same; the accepted path counts inside
+    // applyUpdate. Both go through the one transactional updateService.
     let payload;
     try {
       payload = validatePayload(body.payload, session.type as TemplateType);
     } catch (e) {
-      if (e instanceof HttpError && e.status === 400) {
-        writeLog(db, {
-          projectId: session.project_id,
-          sessionId,
-          kind: "reject",
-          detail: `${e.field ? e.field + ": " : ""}${e.message}`,
-          status: "error",
-        });
-      }
+      if (e instanceof HttpError && e.status === 400) reject(`${e.field ? e.field + ": " : ""}${e.message}`);
       throw e;
     }
 
-    const result = applyUpdate(db, { sessionId, clientMutationId, payload });
-    return reply.send({ version: result.version, lastUpdatedAt: result.lastUpdatedAt, state: result.state });
+    try {
+      const result = applyUpdate(db, { sessionId, clientMutationId, payload });
+      return reply.send({ version: result.version, lastUpdatedAt: result.lastUpdatedAt, state: result.state });
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 409) reject(e.code);
+      throw e;
+    }
   });
 
   // GET /v1/admin/logs — lifecycle + rejection logs (most recent first).

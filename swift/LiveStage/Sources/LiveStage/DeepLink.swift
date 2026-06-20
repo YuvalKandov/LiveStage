@@ -3,7 +3,16 @@ import Foundation
 /// The parsed contents of a tapped LiveStage deep link.
 struct ParsedDeepLink: Equatable {
     let parameters: [String: String]   // `source` removed
-    let source: InteractionSource
+    let interaction: DeepLinkInteraction
+}
+
+/// How a tapped LiveStage deep link is classified for analytics (build spec §4.8/§5.2). Only the two
+/// known internal `source` values map to an event; a missing or unknown source records nothing, so an
+/// arbitrary source-less app link is never miscounted as a Live Activity open.
+enum DeepLinkInteraction: Equatable {
+    case activityOpen      // source=activity_open   -> activity_opened
+    case expandedAction    // source=expanded_action -> expanded_action_tapped
+    case unspecified       // missing/unknown source -> record nothing (still routable)
 }
 
 /// Deep-link composition (mirrors the backend's `composeDeepLink`, build spec §4.1/§5.2) and parsing
@@ -28,9 +37,11 @@ enum DeepLink {
         return composed
     }
 
-    /// Parses a tapped URL into its parameters and interaction source. `source=expanded_action`
-    /// marks an expanded-view action; otherwise it is a primary tap. The `source` key is stripped
-    /// from the returned parameters. Returns nil for a URL with no scheme.
+    /// Parses a tapped URL into its parameters and analytics classification. `source=activity_open`
+    /// marks a primary Live Activity tap, `source=expanded_action` an expanded-view action; any other
+    /// value (or none) is `.unspecified` and records nothing. The internal `source` key is always
+    /// stripped from the returned parameters so it never leaks to the app. Returns nil for a URL with
+    /// no scheme.
     static func parse(_ url: URL) -> ParsedDeepLink? {
         guard url.scheme != nil else { return nil }
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -38,9 +49,14 @@ enum DeepLink {
         for item in components?.queryItems ?? [] {
             params[item.name] = item.value ?? ""
         }
-        let source: InteractionSource = params["source"] == "expanded_action" ? .expandedAction : .primary
+        let interaction: DeepLinkInteraction
+        switch params["source"] {
+        case "activity_open":   interaction = .activityOpen
+        case "expanded_action": interaction = .expandedAction
+        default:                interaction = .unspecified
+        }
         params.removeValue(forKey: "source")
-        return ParsedDeepLink(parameters: params, source: source)
+        return ParsedDeepLink(parameters: params, interaction: interaction)
     }
 
     // MARK: - Helpers

@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
-import { HttpError, nowIso } from "../util";
+import { HttpError, isoDate, nowIso } from "../util";
 import { writeLog } from "../logs";
+import { bumpDaily } from "../analytics/daily";
 import type { LiveStageContentState, TemplatePayload } from "../models";
 
 interface SessionRow {
@@ -103,6 +104,13 @@ export function applyUpdate(
       status: "ok",
     });
 
+    // [server-op] logical-mutation counters (build spec §8.6): a first-seen ACCEPTED mutation counts
+    // one attempt and one accept. The dedupe branch above returns before here, so a retried
+    // clientMutationId never bumps either. Same transaction as the version write.
+    const date = isoDate(now);
+    bumpDaily(db, { projectId: session.project_id, templateId: session.template_id, date, column: "update_attempts" });
+    bumpDaily(db, { projectId: session.project_id, templateId: session.template_id, date, column: "accepted_updates" });
+
     return {
       version: newVersion,
       lastUpdatedAt: now,
@@ -112,4 +120,48 @@ export function applyUpdate(
   });
 
   return tx();
+}
+
+/**
+ * Records a REJECTED post-start mutation (build spec §8.6) in one transaction: writes the `reject`
+ * log and, for a first-seen logical mutation, counts one attempt and one rejection. Idempotent and
+ * honest:
+ *  - a retried rejection (same session + mutation_id) inserts nothing and counts nothing
+ *    (the rejected_mutations PK), so retries never inflate the rate;
+ *  - a mutation already ACCEPTED (present in session_states) is never also counted as rejected.
+ *
+ * Used by the SDK and admin PATCH paths for validation (400) and lifecycle (409 ended) rejections.
+ * Start (POST) validation failures are NOT updates and never call this.
+ */
+export function rejectUpdate(
+  db: Database,
+  args: { projectId: string; templateId: string; sessionId: string; mutationId: string; reason: string },
+): void {
+  db.transaction(() => {
+    writeLog(db, {
+      projectId: args.projectId,
+      sessionId: args.sessionId,
+      kind: "reject",
+      detail: args.reason,
+      status: "error",
+    });
+
+    const alreadyAccepted = db
+      .prepare(`SELECT 1 FROM session_states WHERE session_id = ? AND mutation_id = ?`)
+      .get(args.sessionId, args.mutationId);
+    if (alreadyAccepted) return;
+
+    const now = nowIso();
+    const inserted = db
+      .prepare(
+        `INSERT OR IGNORE INTO rejected_mutations (session_id, mutation_id, project_id, template_id, reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(args.sessionId, args.mutationId, args.projectId, args.templateId, args.reason, now);
+    if (inserted.changes === 1) {
+      const date = isoDate(now);
+      bumpDaily(db, { projectId: args.projectId, templateId: args.templateId, date, column: "update_attempts" });
+      bumpDaily(db, { projectId: args.projectId, templateId: args.templateId, date, column: "rejected_updates" });
+    }
+  })();
 }

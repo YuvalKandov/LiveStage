@@ -6,6 +6,8 @@ import { HttpError } from "./util";
 import { registerActivityRoutes } from "./routes/activities";
 import { registerTemplateRoutes } from "./routes/templates";
 import { registerAdminRoutes } from "./routes/admin";
+import { registerEventRoutes } from "./routes/events";
+import { registerInsightsRoutes } from "./routes/insights";
 
 /** Single source of truth for the local port (the demo app and portal must match this). */
 export const PORT = Number(process.env.PORT ?? 8787);
@@ -29,6 +31,8 @@ export function buildApp(db: Database): FastifyInstance {
 
   registerTemplateRoutes(app, db);
   registerActivityRoutes(app, db);
+  registerEventRoutes(app, db);
+  registerInsightsRoutes(app, db);
   registerAdminRoutes(app, db);
 
   app.get("/health", (_req, reply) => reply.send({ ok: true }));

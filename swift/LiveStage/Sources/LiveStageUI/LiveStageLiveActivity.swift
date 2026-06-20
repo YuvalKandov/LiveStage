@@ -32,7 +32,9 @@ public struct LiveStageLiveActivity: Widget {
             } minimal: {
                 minimal(context)
             }
-            .widgetURL(context.attributes.deepLinkURL)
+            // The primary tap carries source=activity_open so handleDeepLink records activity_opened
+            // (build spec §4.8/§5.2); the expanded Link (below) carries source=expanded_action.
+            .widgetURL(deepLink(context, source: "activity_open"))
             .keylineTint(context.attributes.accentStyle.color)
         }
     }
@@ -41,6 +43,16 @@ public struct LiveStageLiveActivity: Widget {
 
     /// De-emphasis factor for stale Lock Screen / expanded content (design §07).
     private func staleDim(_ context: Context) -> Double { context.isStale ? 0.55 : 1 }
+
+    /// The activity's deep link with an internal `source` query item appended. The SDK strips it
+    /// before returning the public route, so it never leaks to the app.
+    private func deepLink(_ context: Context, source: String) -> URL {
+        guard var comps = URLComponents(url: context.attributes.deepLinkURL, resolvingAgainstBaseURL: false) else {
+            return context.attributes.deepLinkURL
+        }
+        comps.queryItems = (comps.queryItems ?? []) + [URLQueryItem(name: "source", value: source)]
+        return comps.url ?? context.attributes.deepLinkURL
+    }
 
     // MARK: - Lock Screen
 
@@ -121,6 +133,17 @@ public struct LiveStageLiveActivity: Widget {
             .opacity(staleDim(context))
             if context.isStale {
                 StaleHint(lastUpdatedAt: context.state.metadata.lastUpdatedAt)
+            }
+            // An intentional action inside the expanded view (build spec §11). Tapping it opens the
+            // app with source=expanded_action, which the SDK records as expanded_action_tapped — a
+            // separate, intentional interaction, never a long-press/expansion count.
+            Link(destination: deepLink(context, source: "expanded_action")) {
+                HStack(spacing: 3) {
+                    Text("View details")
+                    Image(systemName: "chevron.right")
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(context.attributes.accentStyle.color)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)   // keep bottom content left-aligned, not centered

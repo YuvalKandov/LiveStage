@@ -17,6 +17,11 @@ actor LiveStageRuntime {
     private var lastAppliedContent: [String: LiveStageContentState] = [:]   // for the countdown zero-transition
     private var zeroTransitionTasks: [String: Task<Void, Never>] = [:]
 
+    /// The analytics pipeline (build spec §4.8/§5.2). Lazily built so it resolves the persisted
+    /// installationId only when analytics first run; it reads the same ConfigStore for uploads.
+    private lazy var pipeline = EventPipeline(config: config)
+    private var observersConfigured = false
+
     #if os(iOS)
     private let bridge = ActivityBridge()
     #endif
@@ -47,6 +52,7 @@ actor LiveStageRuntime {
         deepLinkParameters: [String: String],
         state: TemplatePayload
     ) async throws -> LiveStageSession {
+        configureObserversIfNeeded()
         let api = try apiClient()
         let config = try await configuration(for: templateId)
 
@@ -101,6 +107,9 @@ actor LiveStageRuntime {
         deepLinkURLs[resp.sessionId] = resp.deepLinkURL
         sessionTemplates[resp.sessionId] = templateId
         startPolling(sessionId: resp.sessionId)
+        // The activity is now requested and rendering — record the start (no version: the initial
+        // start state is shown via Activity.request and never produces a state_applied ack, §8.6).
+        await pipeline.record(.activityStarted, sessionId: resp.sessionId, templateId: templateId)
         return LiveStageSession(sessionId: resp.sessionId, templateId: templateId)
     }
 
@@ -108,18 +117,33 @@ actor LiveStageRuntime {
 
     func update(_ session: LiveStageSession, state: TemplatePayload) async throws {
         let api = try apiClient()
+        let templateId = sessionTemplates[session.sessionId] ?? session.templateId
         // One clientMutationId per public update call, reused across the APIClient's retries.
-        let resp = try await api.update(
-            sessionId: session.sessionId,
-            clientMutationId: UUID().uuidString,
-            payload: state
-        )
+        let resp: UpdateResponse
+        do {
+            resp = try await api.update(
+                sessionId: session.sessionId,
+                clientMutationId: UUID().uuidString,
+                payload: state
+            )
+        } catch {
+            // sync_failed is narrow (§4.8/§8.6): only transport/server failures, never a server-rejected
+            // update (validation/lifecycle), which the server already counts in rejected_updates.
+            if let reason = SyncFailureClassifier.failureReason(for: error) {
+                await pipeline.record(.syncFailed, sessionId: session.sessionId, templateId: templateId, metadata: ["reason": reason])
+            }
+            throw error
+        }
         let staleSecs = staleAfterSeconds[session.sessionId] ?? 900
         let staleDate = resp.lastUpdatedAt.addingTimeInterval(TimeInterval(staleSecs))
         #if os(iOS)
         await bridge.update(sessionId: session.sessionId, state: resp.state, staleDate: staleDate)
         lastAppliedContent[session.sessionId] = resp.state
         scheduleZeroTransition(sessionId: session.sessionId)
+        // Acknowledge the device application (build spec §9): the server computes acknowledged sync
+        // latency from this. Only on a genuine forward apply (version >= 2) — never v1, never the
+        // zero-transition (which re-applies the same version).
+        await pipeline.record(.stateApplied, sessionId: session.sessionId, templateId: templateId, version: resp.version)
         #endif
         appliedVersions[session.sessionId] = resp.version
     }
@@ -128,11 +152,13 @@ actor LiveStageRuntime {
 
     func end(_ session: LiveStageSession) async throws {
         let api = try apiClient()
+        let templateId = sessionTemplates[session.sessionId] ?? session.templateId
         try await api.end(sessionId: session.sessionId, reason: nil)
         stopPolling(sessionId: session.sessionId)
         #if os(iOS)
         await bridge.end(sessionId: session.sessionId)
         #endif
+        await pipeline.record(.activityEnded, sessionId: session.sessionId, templateId: templateId)
         clearSession(session.sessionId)
     }
 
@@ -149,13 +175,50 @@ actor LiveStageRuntime {
 
     // MARK: - Deep links
 
-    /// Best-effort in M1: parse the URL, match it to an active session by its composed deep link, and
-    /// return routing info. Recording `activity_opened` / `expanded_action_tapped` is added in M3.
+    /// Parses a tapped URL, matches it to a known session by its (source-stripped) composed deep link,
+    /// records the interaction event, and returns routing info. Strict source handling (build spec
+    /// §4.8/§5.2): `activity_open` records `activity_opened`, `expanded_action` records
+    /// `expanded_action_tapped` (with `metadata.source=expanded_action`), and a missing/unknown source
+    /// records nothing — an arbitrary source-less link is never classified as a Live Activity open.
+    /// Returns nil for a URL that matches no known LiveStage session.
     func handleDeepLink(_ url: URL) async throws -> LiveStageRoute? {
         guard let parsed = DeepLink.parse(url) else { return nil }
         let tapped = strippingSource(url)
         guard let sessionId = deepLinkURLs.first(where: { $0.value == tapped })?.key else { return nil }
-        return LiveStageRoute(sessionId: sessionId, parameters: parsed.parameters, source: parsed.source)
+        let templateId = sessionTemplates[sessionId] ?? ""
+
+        let source: InteractionSource
+        switch parsed.interaction {
+        case .activityOpen:
+            await pipeline.record(.activityOpened, sessionId: sessionId, templateId: templateId)
+            source = .primary
+        case .expandedAction:
+            await pipeline.record(.expandedActionTapped, sessionId: sessionId, templateId: templateId, metadata: ["source": "expanded_action"])
+            source = .expandedAction
+        case .unspecified:
+            source = .primary   // routable for navigation, but not recorded as an interaction
+        }
+        return LiveStageRoute(sessionId: sessionId, parameters: parsed.parameters, source: source)
+    }
+
+    // MARK: - Dismissal observation (best-effort, build spec §4.8/§8.5)
+
+    /// Wires the ActivityKit dismissal callback once (the actor isn't fully initialized at `init`, so
+    /// this runs lazily on the first `start`). Best-effort only: a dismissal is observable solely
+    /// while the app runs, so this is never a guaranteed-dismissal count.
+    private func configureObserversIfNeeded() {
+        guard !observersConfigured else { return }
+        observersConfigured = true
+        #if os(iOS)
+        bridge.onDismissed = { [weak self] sessionId in
+            Task { await self?.recordDismissal(sessionId: sessionId) }
+        }
+        #endif
+    }
+
+    private func recordDismissal(sessionId: String) async {
+        guard let templateId = sessionTemplates[sessionId] else { return }
+        await pipeline.record(.dismissalObserved, sessionId: sessionId, templateId: templateId)
     }
 
     // MARK: - Polling (one cancellable task per active session, cancelled on end)
@@ -193,6 +256,8 @@ actor LiveStageRuntime {
         await bridge.update(sessionId: sessionId, state: resp.state, staleDate: staleDate)
         lastAppliedContent[sessionId] = resp.state
         scheduleZeroTransition(sessionId: sessionId)
+        // A portal/backend-originated forward apply is also acknowledged (server-clock latency, §9).
+        await pipeline.record(.stateApplied, sessionId: sessionId, templateId: sessionTemplates[sessionId] ?? "", version: resp.version)
         #endif
         appliedVersions[sessionId] = resp.version
     }
