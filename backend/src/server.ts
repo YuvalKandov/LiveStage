@@ -6,6 +6,8 @@ import { HttpError } from "./util";
 import { registerActivityRoutes } from "./routes/activities";
 import { registerTemplateRoutes } from "./routes/templates";
 import { registerAdminRoutes } from "./routes/admin";
+import { registerAdminProjectRoutes } from "./routes/adminProjects";
+import { registerAdminTemplateRoutes } from "./routes/adminTemplates";
 import { registerEventRoutes } from "./routes/events";
 import { registerInsightsRoutes } from "./routes/insights";
 
@@ -34,6 +36,8 @@ export function buildApp(db: Database): FastifyInstance {
   registerEventRoutes(app, db);
   registerInsightsRoutes(app, db);
   registerAdminRoutes(app, db);
+  registerAdminProjectRoutes(app, db);
+  registerAdminTemplateRoutes(app, db);
 
   app.get("/health", (_req, reply) => reply.send({ ok: true }));
   return app;

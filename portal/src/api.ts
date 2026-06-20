@@ -1,5 +1,16 @@
 import { API_BASE, ADMIN_TOKEN } from "./config";
-import type { AdminSession, ApiError, LogRow, TemplatePayload, UpdateResult } from "./types";
+import type {
+  AdminSession,
+  ApiError,
+  ApiKeyMeta,
+  CreatedApiKey,
+  KeyType,
+  LogRow,
+  Project,
+  TemplateConfig,
+  TemplatePayload,
+  UpdateResult,
+} from "./types";
 
 /** An error that carries the backend's structured { error, message, field } (e.g. a 400 validation). */
 export class PortalApiError extends Error {
@@ -41,4 +52,46 @@ export function updateSession(sessionId: string, payload: TemplatePayload): Prom
 /** Lifecycle + rejection logs (build spec §8.3: GET /v1/admin/logs). */
 export function listLogs(): Promise<{ logs: LogRow[] }> {
   return adminFetch("/v1/admin/logs");
+}
+
+// --- Projects & API keys (admin plane, build spec §8.3/§12) -------------------------------------
+
+export function listProjects(): Promise<{ projects: Project[] }> {
+  return adminFetch("/v1/admin/projects");
+}
+
+export function createProject(name: string): Promise<Project> {
+  return adminFetch("/v1/admin/projects", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+export function listApiKeys(projectId: string): Promise<{ keys: ApiKeyMeta[] }> {
+  return adminFetch(`/v1/admin/api-keys?projectId=${encodeURIComponent(projectId)}`);
+}
+
+/** Generate a key. The response carries the raw key once; the server stores only the secret hash. */
+export function createApiKey(projectId: string, keyType: KeyType, label: string): Promise<CreatedApiKey> {
+  return adminFetch("/v1/admin/api-keys", {
+    method: "POST",
+    body: JSON.stringify({ projectId, keyType, label }),
+  });
+}
+
+export function revokeApiKey(id: string): Promise<{ id: string; revoked: boolean }> {
+  return adminFetch(`/v1/admin/api-keys/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+}
+
+// --- Templates (admin plane, build spec §8.3/§8.4) ---------------------------------------------
+
+export function listTemplates(projectId?: string): Promise<{ templates: TemplateConfig[] }> {
+  const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+  return adminFetch(`/v1/admin/templates${q}`);
+}
+
+/** Create a template. `body` carries the config fields incl. labels (with zeroStateLabel as a label). */
+export function createTemplate(body: Record<string, unknown>): Promise<TemplateConfig> {
+  return adminFetch("/v1/admin/templates", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateTemplate(id: string, body: Record<string, unknown>): Promise<TemplateConfig> {
+  return adminFetch(`/v1/admin/templates/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) });
 }

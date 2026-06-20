@@ -173,6 +173,7 @@ export function computeSummary(db: Database, args: SummaryArgs) {
   const updatesApplied = applySuccess.numerator; // distinct (session,version) acks in cohort
 
   return {
+    projectId,
     range: { from, to, evaluationTime, templateId: templateId ?? null },
     heroes: {
       applySuccessRate: applySuccess,
@@ -250,8 +251,8 @@ const TIMESERIES_METRICS: Record<string, MetricDef> = {
   errors: { kind: "count", value: "errors" },
   sessionsWithInteraction: { kind: "count", value: "sessions_with_interaction" },
   updateRejectionRate: { kind: "rate", num: "rejected_updates", den: "update_attempts" },
-  applySuccessRate: { kind: "rate", num: "updates_applied", den: "accepted_updates", note: "per-day operational rate (acked applies / accepted updates that day) — not the cohort-aligned range hero" },
-  interactionRate: { kind: "rate", num: "sessions_with_interaction", den: "sessions_started", note: "daily started-session interaction rate — not the CP4 cohort summary" },
+  applySuccessRate: { kind: "rate", num: "updates_applied", den: "accepted_updates", note: "per-day operational rate (acked applies / accepted updates that day) - not the cohort-aligned range hero" },
+  interactionRate: { kind: "rate", num: "sessions_with_interaction", den: "sessions_started", note: "daily started-session interaction rate - not the range cohort summary" },
   averageLatencyMs: { kind: "latency", num: "total_sync_latency_ms", den: "ack_count", note: "per-day average only; the median comes from raw rows (summary), never daily" },
 };
 

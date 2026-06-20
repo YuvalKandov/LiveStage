@@ -61,3 +61,54 @@ export interface ApiError {
   message: string;
   field?: string;
 }
+
+export type KeyType = "mobile" | "service";
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+/** Key metadata from the listing - never carries the secret (build spec §12). */
+export interface ApiKeyMeta {
+  id: string;
+  projectId: string;
+  keyType: KeyType;
+  label: string;
+  revoked: boolean;
+  createdAt: string;
+}
+
+/** The create response, which carries the raw key exactly once (`key`). */
+export interface CreatedApiKey extends ApiKeyMeta {
+  key: string;
+}
+
+export type TemplateType = "journey" | "countdown" | "progress";
+export type AccentStyle = "blue" | "orange" | "green" | "indigo" | "teal";
+
+/** The icon allowlist + accent palette the backend validates against (build spec §4.5). */
+export const ICON_ALLOWLIST = ["airplane", "clock", "shippingbox", "mappin", "bag", "car", "bell"];
+export const ACCENT_STYLES: AccentStyle[] = ["blue", "orange", "green", "indigo", "teal"];
+
+export interface TemplateLabels {
+  nextStepLabel?: string | null;
+  targetLabel?: string | null;
+  countdownLabel?: string | null;
+  completionLabel?: string | null;
+  zeroStateLabel?: string | null; // countdown only; folded from the internal column on read
+}
+
+export interface TemplateConfig {
+  id: string;
+  projectId: string;
+  templateId: string;
+  type: TemplateType;
+  displayName: string;
+  icon: string;
+  accent: AccentStyle;
+  deepLinkBase: string;
+  labels: TemplateLabels;
+  staleAfterSeconds: number;
+}
