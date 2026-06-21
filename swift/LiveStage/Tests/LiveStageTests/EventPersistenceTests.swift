@@ -166,6 +166,30 @@ final class EventPersistenceTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    // MARK: - Single-flight flush (foreground hook can't race a poll-triggered flush)
+
+    func testConcurrentFlushesDoNotDoubleUpload() async {
+        let stub = StubUploader()
+        // Slow the first upload so a second flush overlaps it; the guard must make the second a no-op.
+        stub.setHook { try? await Task.sleep(nanoseconds: 80_000_000) }
+        let pipeline = EventPipeline(config: unconfigured(), store: InMemoryEventStore(), uploader: stub)
+        await pipeline.record(.activityStarted, sessionId: "s", templateId: "t")
+
+        // Two explicit flushes overlap whichever flush record() already scheduled; only one wins the
+        // in-flight slot and uploads, the rest are no-ops.
+        async let a: Void = pipeline.flush()
+        async let b: Void = pipeline.flush()
+        _ = await (a, b)
+
+        // Let the winning (possibly record-scheduled, unawaited) flush finish its slow upload + drain.
+        for _ in 0..<50 where await pipeline.queuedCount() != 0 { try? await Task.sleep(nanoseconds: 20_000_000) }
+
+        let uploaded = stub.received.flatMap { $0 }.map(\.eventId)
+        XCTAssertEqual(uploaded.count, 1, "the event uploads once despite overlapping flushes (single-flight)")
+        let count = await pipeline.queuedCount()
+        XCTAssertEqual(count, 0, "and the queue is drained")
+    }
+
     // MARK: - Corruption
 
     func testCorruptQueueFileIsQuarantinedAndStartsEmpty() throws {

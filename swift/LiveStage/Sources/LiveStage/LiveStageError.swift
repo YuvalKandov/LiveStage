@@ -40,3 +40,9 @@ extension LiveStageError: CustomStringConvertible {
         }
     }
 }
+
+/// Surfaces the same actionable message through `Error.localizedDescription` so host apps that show
+/// `error.localizedDescription` (the common path) get the real reason, not a generic Foundation string.
+extension LiveStageError: LocalizedError {
+    public var errorDescription: String? { description }
+}

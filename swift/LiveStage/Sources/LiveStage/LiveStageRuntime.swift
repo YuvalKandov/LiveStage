@@ -1,12 +1,19 @@
 import Foundation
 import LiveStageModels
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// The actor that owns all shared SDK state (build spec §5.2): configuration access, the API client,
 /// the per-session applied version, stale windows, deep-link URLs, and the per-session polling tasks.
 /// Every public `LiveStage` call funnels through here, so the mutable state is serialized by the actor.
 actor LiveStageRuntime {
     private let config: ConfigStore
     private let pollInterval: TimeInterval
+    private let cache: LocalCache
+    private let urlSession: URLSession
+    private let apiMaxAttempts: Int
 
     private var configCache: [String: TemplateConfiguration] = [:]
     private var appliedVersions: [String: Int] = [:]
@@ -24,25 +31,71 @@ actor LiveStageRuntime {
 
     #if os(iOS)
     private let bridge = ActivityBridge()
+    /// Token for the foreground notification observer, removed on deinit so it can't leak.
+    private var foregroundObserver: NSObjectProtocol?
     #endif
 
-    init(config: ConfigStore, pollInterval: TimeInterval = 8) {
+    init(
+        config: ConfigStore,
+        pollInterval: TimeInterval = 8,
+        cache: LocalCache = FileLocalCache(),
+        urlSession: URLSession = .shared,
+        apiMaxAttempts: Int = 4
+    ) {
         self.config = config
         self.pollInterval = pollInterval
+        self.cache = cache
+        self.urlSession = urlSession
+        self.apiMaxAttempts = apiMaxAttempts
+    }
+
+    deinit {
+        #if os(iOS)
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
+        #endif
     }
 
     private func apiClient() throws -> APIClient {
         let (apiKey, baseURL) = try config.current()
-        return APIClient(baseURL: baseURL, apiKey: apiKey)
+        return APIClient(baseURL: baseURL, apiKey: apiKey, maxAttempts: apiMaxAttempts, session: urlSession)
+    }
+
+    /// Whether an error is a transport failure (offline), so the caller can fall back to the local
+    /// cache (build spec §5.4). Server-rejection errors (validation/lifecycle/decoding) are not.
+    private static func isNetworkError(_ error: Error) -> Bool {
+        if case LiveStageError.network = error { return true }
+        return false
     }
 
     // MARK: - Configuration
 
     func configuration(for templateId: String) async throws -> TemplateConfiguration {
         if let cached = configCache[templateId] { return cached }
-        let config = try await apiClient().fetchConfiguration(templateId: templateId)
-        configCache[templateId] = config
-        return config
+        do {
+            // Network up: the fresh config always wins and refreshes the durable cache (§4.4 immutability
+            // is per running activity; fetchConfiguration still returns the latest authored config).
+            let config = try await apiClient().fetchConfiguration(templateId: templateId)
+            configCache[templateId] = config
+            cache.putConfig(config)
+            return config
+        } catch {
+            // Offline (§5.4): serve the last known config from the durable cache. Re-throw the original
+            // error if there is nothing cached, or if the failure was not a transport failure.
+            if Self.isNetworkError(error), let cached = cache.config(for: templateId) {
+                configCache[templateId] = cached
+                return cached
+            }
+            throw error
+        }
+    }
+
+    private func cacheSession(_ sessionId: String, state: LiveStageContentState, status: String) {
+        cache.putSession(CachedSession(
+            sessionId: sessionId,
+            state: state,
+            status: status,
+            staleAfterSeconds: staleAfterSeconds[sessionId] ?? 900
+        ))
     }
 
     // MARK: - Start
@@ -100,6 +153,11 @@ actor LiveStageRuntime {
         }
         lastAppliedContent[resp.sessionId] = contentState
         scheduleZeroTransition(sessionId: resp.sessionId)
+        // Seed the durable cache so status() can answer offline and the last state is retained (§5.4).
+        cache.putSession(CachedSession(
+            sessionId: resp.sessionId, state: contentState, status: "active",
+            staleAfterSeconds: resp.staleAfterSeconds
+        ))
         #endif
 
         appliedVersions[resp.sessionId] = resp.version
@@ -146,6 +204,7 @@ actor LiveStageRuntime {
         await pipeline.record(.stateApplied, sessionId: session.sessionId, templateId: templateId, version: resp.version)
         #endif
         appliedVersions[session.sessionId] = resp.version
+        cacheSession(session.sessionId, state: resp.state, status: "active")
     }
 
     // MARK: - End (idempotent server-side; stops polling and finalizes the activity)
@@ -159,18 +218,38 @@ actor LiveStageRuntime {
         await bridge.end(sessionId: session.sessionId)
         #endif
         await pipeline.record(.activityEnded, sessionId: session.sessionId, templateId: templateId)
+        // Reflect the terminal lifecycle in the durable cache before dropping the in-memory state.
+        if let existing = cache.session(for: session.sessionId) {
+            cache.putSession(CachedSession(
+                sessionId: existing.sessionId, state: existing.state, status: "ended",
+                staleAfterSeconds: existing.staleAfterSeconds
+            ))
+        }
         clearSession(session.sessionId)
     }
 
     // MARK: - Status
 
     func status(_ session: LiveStageSession) async throws -> SessionStatus {
-        let resp = try await apiClient().get(sessionId: session.sessionId)
-        return SessionStatus(
-            status: try LifecycleStatus(serverStatus: resp.status),
-            version: resp.version,
-            lastUpdatedAt: resp.lastUpdatedAt
-        )
+        do {
+            let resp = try await apiClient().get(sessionId: session.sessionId)
+            return SessionStatus(
+                status: try LifecycleStatus(serverStatus: resp.status),
+                version: resp.version,
+                lastUpdatedAt: resp.lastUpdatedAt
+            )
+        } catch {
+            // Offline (§5.4): answer from the durable cache. Re-throw if there is nothing cached, or
+            // if the failure was not a transport failure (a real 404/decoding error must surface).
+            if Self.isNetworkError(error), let cached = cache.session(for: session.sessionId) {
+                return SessionStatus(
+                    status: try LifecycleStatus(serverStatus: cached.status),
+                    version: cached.state.metadata.version,
+                    lastUpdatedAt: cached.state.metadata.lastUpdatedAt
+                )
+            }
+            throw error
+        }
     }
 
     // MARK: - Deep links
@@ -213,7 +292,19 @@ actor LiveStageRuntime {
         bridge.onDismissed = { [weak self] sessionId in
             Task { await self?.recordDismissal(sessionId: sessionId) }
         }
+        // Upload-on-reconnect (build spec §5.4 acceptance): when the app returns to the foreground,
+        // flush any events that queued while offline. The flush is single-flight, so this can't race
+        // a poll-triggered flush. The token is removed on deinit so the observer can't leak.
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            Task { await self?.flushPendingEvents() }
+        }
         #endif
+    }
+
+    private func flushPendingEvents() async {
+        await pipeline.flush()
     }
 
     private func recordDismissal(sessionId: String) async {
@@ -260,6 +351,7 @@ actor LiveStageRuntime {
         await pipeline.record(.stateApplied, sessionId: sessionId, templateId: sessionTemplates[sessionId] ?? "", version: resp.version)
         #endif
         appliedVersions[sessionId] = resp.version
+        cacheSession(sessionId, state: resp.state, status: "active")
     }
 
     private func clearSession(_ sessionId: String) {

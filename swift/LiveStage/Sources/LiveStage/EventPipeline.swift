@@ -19,6 +19,7 @@ actor EventPipeline {
 
     private var queue: EventQueue
     private var flushTask: Task<Void, Never>?
+    private var isFlushing = false
 
     init(
         config: ConfigStore,
@@ -67,9 +68,15 @@ actor EventPipeline {
     }
 
     /// Uploads queued events in batches. Removes only the ids the server completed; stops on a network
-    /// failure or a partial result (retained events retry on the next flush). Public so tests and a
-    /// future app-lifecycle hook can flush deterministically.
+    /// failure or a partial result (retained events retry on the next flush). Called by `scheduleFlush`
+    /// (record bursts), by tests, and by the runtime's foreground hook (upload-on-reconnect), so it is
+    /// **single-flight**: a concurrent invocation while one is in progress returns immediately rather
+    /// than racing the same queue file. The in-progress pass picks up anything appended meanwhile (its
+    /// `while` loop re-checks the queue), and the `eventId` dedupe makes any later retry safe.
     func flush() async {
+        guard !isFlushing else { return }
+        isFlushing = true
+        defer { isFlushing = false }
         guard let uploader = currentUploader() else { return }   // not configured yet — keep queued
         while !queue.isEmpty {
             let batch = queue.peekBatch(max: batchSize)

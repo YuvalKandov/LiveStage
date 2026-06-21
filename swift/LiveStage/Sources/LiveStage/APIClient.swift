@@ -158,7 +158,7 @@ struct APIClient: Sendable {
                 }
                 if http.statusCode >= 500 {
                     lastError = Self.mapError(status: http.statusCode, body: try? Self.decoder.decode(APIErrorBody.self, from: data))
-                    try await backoff(attempt)
+                    if attempt < maxAttempts - 1 { try await backoff(attempt) }
                     continue
                 }
                 if http.statusCode >= 400 {

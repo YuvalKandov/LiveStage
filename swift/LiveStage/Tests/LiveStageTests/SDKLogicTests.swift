@@ -75,6 +75,13 @@ final class SDKLogicTests: XCTestCase {
         XCTAssertFalse(SyncDecision.shouldApply(incoming: 1, applied: 4), "older version is out-of-order, ignore")
     }
 
+    func testForwardOnlyVersionEdgeCases() {
+        XCTAssertTrue(SyncDecision.shouldApply(incoming: 1, applied: 0), "the first state after the initial baseline applies")
+        XCTAssertTrue(SyncDecision.shouldApply(incoming: 10, applied: 2), "a large forward jump (missed polls) still applies")
+        XCTAssertFalse(SyncDecision.shouldApply(incoming: 0, applied: 0), "no movement from the baseline is not an apply")
+        XCTAssertFalse(SyncDecision.shouldApply(incoming: 4, applied: 5), "a late out-of-order response below the applied version is ignored")
+    }
+
     // MARK: - HTTP status → LiveStageError mapping (build spec §5.3)
 
     func testErrorMapping() {
@@ -102,6 +109,15 @@ final class SDKLogicTests: XCTestCase {
         } else {
             XCTFail("500 should map to .server")
         }
+    }
+
+    // MARK: - Error model surfaced clearly (build spec §5.3)
+
+    func testLiveStageErrorSurfacesActionableLocalizedDescription() {
+        let err = LiveStageError.validation(field: "progress", message: "out of range (1.4)")
+        XCTAssertEqual(err.errorDescription, "Validation failed for progress: out of range (1.4)")
+        // Host apps that display `error.localizedDescription` get the real reason, not a generic string.
+        XCTAssertEqual((err as Error).localizedDescription, "Validation failed for progress: out of range (1.4)")
     }
 
     // MARK: - Canonical wire schema (compare parsed objects, not raw bytes)
