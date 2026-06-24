@@ -68,9 +68,12 @@ enum ProgressViews {
     }
 
     static func compactTrailing(_ state: ProgressState, attributes: LiveStageActivityAttributes) -> some View {
+        // Right-pinned within the shared compact width so the pill matches Journey/Countdown.
         Text(percentString(state.progress))
             .font(.system(size: 15, weight: .semibold)).monospacedDigit()
             .foregroundStyle(.white)
+            .lineLimit(1).minimumScaleFactor(0.7)
+            .frame(width: liveStageCompactTrailingWidth, alignment: .trailing)
     }
 
     // MARK: - Dynamic Island · minimal (progress ring + icon - design §06)
@@ -84,38 +87,33 @@ enum ProgressViews {
 
     // MARK: - Dynamic Island · expanded regions (design §06)
 
-    static func expandedLeading(_ state: ProgressState, attributes: LiveStageActivityAttributes) -> some View {
+    /// Expanded center: the whole top row, Apple-Music style - album-art tile, then title + stage, then
+    /// the hero percentage + completion time on the right, all vertically centered. Built as one row in
+    /// the wide center region (the leading slot beside the camera is too narrow); leading/trailing are
+    /// unused (design §06).
+    static func expandedCenter(_ state: ProgressState, attributes: LiveStageActivityAttributes) -> some View {
         let accent = renderTint(attributes.accentStyle.color, completed: completed(state))
-        return HStack(spacing: 9) {
-            ZStack {
-                Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-                liveStageIcon(attributes.iconIdentifier)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(accent)
-            }
-            VStack(alignment: .leading, spacing: 1) {
+        return HStack(spacing: 11) {
+            expandedArtwork(attributes.iconIdentifier, accent: accent)
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(state.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                    Text(state.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
                     if completed(state) { CompletedBadge(tint: accent) }
                 }
                 if let stage = state.currentStage, !stage.isEmpty {
-                    Text(stage).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(stage).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(percentString(state.progress))
+                    .font(.system(size: 16, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(accent).fixedSize()
+                completionTime(state, label: attributes.labels.completionLabel)
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+            }
         }
-    }
-
-    @ViewBuilder
-    static func expandedCenter(_ state: ProgressState, attributes: LiveStageActivityAttributes) -> some View {
-        completionTime(state, label: attributes.labels.completionLabel)
-            .font(.system(size: 12)).foregroundStyle(.secondary)
-    }
-
-    static func expandedTrailing(_ state: ProgressState, attributes: LiveStageActivityAttributes) -> some View {
-        Text(percentString(state.progress))
-            .font(.system(size: 17, weight: .semibold)).monospacedDigit()
-            .foregroundStyle(renderTint(attributes.accentStyle.color, completed: completed(state)))
-            .fixedSize()                       // keep the % at its natural width (don't clip the left digit)
     }
 
     /// Expanded bottom: progress bar + detailText; the bar takes full width when no detail (design §06).

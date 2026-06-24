@@ -70,7 +70,8 @@ enum JourneyViews {
                         if let label = attributes.labels.targetLabel {
                             Text(label).font(.caption).foregroundStyle(.secondary)
                         }
-                        CountdownText(date: date).font(.caption).fontWeight(.semibold)
+                        // Journey ETA is a coarse "1h 42m" (design §04), not a ticking clock.
+                        Text(shortDuration(until: date)).font(.caption).fontWeight(.semibold)
                     }
                 }
             }
@@ -91,15 +92,25 @@ enum JourneyViews {
 
     @ViewBuilder
     static func compactTrailing(_ state: JourneyState, attributes: LiveStageActivityAttributes) -> some View {
-        // Consistent compact-trailing style across all templates: size-to-content, no width cap
-        // (so a long countdown like "1:41:50" isn't truncated).
+        // Uniform compact-trailing slot across all templates: values are right-pinned within the
+        // shared `liveStageCompactTrailingWidth` so the compact pill is the same length everywhere.
         switch TrailingContent.resolve(state, allowStatus: true) {
         case .countdown(let date):
-            CountdownText(date: date).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+            // Journey shows a coarse "1h 42m" ETA (design §04), not the ticking clock.
+            Text(shortDuration(until: date))
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: liveStageCompactTrailingWidth, alignment: .trailing)
         case .percent(let p):
-            Text(percentString(p)).font(.system(size: 15, weight: .semibold)).monospacedDigit().foregroundStyle(.white)
+            Text(percentString(p))
+                .font(.system(size: 15, weight: .semibold)).monospacedDigit().foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: liveStageCompactTrailingWidth, alignment: .trailing)
         case .status(let text):
-            Text(text).font(.system(size: 13, weight: .medium)).foregroundStyle(.white).lineLimit(1)
+            Text(text)
+                .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: liveStageCompactTrailingWidth, alignment: .trailing)
         case .iconOnly:
             EmptyView()
         }
@@ -122,42 +133,31 @@ enum JourneyViews {
 
     // MARK: - Dynamic Island · expanded regions (design §04)
 
-    static func expandedLeading(_ state: JourneyState, attributes: LiveStageActivityAttributes) -> some View {
-        HStack(spacing: 9) {
-            ZStack {
-                Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-                liveStageIcon(attributes.iconIdentifier)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(attributes.accentStyle.color)
+    /// Expanded center: the whole top row, Apple-Music style - album-art tile, then title + current
+    /// step, then the ETA/% value + status on the right, all vertically centered. Built as one row in
+    /// the wide center region (the leading slot beside the camera is too narrow); leading/trailing are
+    /// unused (design §04).
+    static func expandedCenter(_ state: JourneyState, attributes: LiveStageActivityAttributes) -> some View {
+        let accent = attributes.accentStyle.color
+        return HStack(spacing: 11) {
+            expandedArtwork(attributes.iconIdentifier, accent: accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(state.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                Text(state.currentStep).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(state.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
-                Text(state.currentStep).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let date = state.targetDate {
+                    Text(shortDuration(until: date))
+                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(accent).fixedSize()
+                } else if let progress = state.progress {
+                    Text(percentString(progress))
+                        .font(.system(size: 16, weight: .semibold)).monospacedDigit().foregroundStyle(accent).fixedSize()
+                }
+                if let status = state.statusText, !status.isEmpty {
+                    Text(status).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
-        }
-    }
-
-    @ViewBuilder
-    static func expandedCenter(_ state: JourneyState) -> some View {
-        if let status = state.statusText, !status.isEmpty {
-            Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
-        }
-    }
-
-    /// Expanded trailing: targetDate countdown → progress %.
-    @ViewBuilder
-    static func expandedTrailing(_ state: JourneyState, attributes: LiveStageActivityAttributes) -> some View {
-        if let date = state.targetDate {
-            CountdownText(date: date)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(attributes.accentStyle.color)
-                .frame(maxWidth: 70)
-        } else if let progress = state.progress {
-            Text(percentString(progress))
-                .font(.system(size: 17, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(attributes.accentStyle.color)
-                .fixedSize()                   // keep the % at its natural width (don't clip the left digit)
         }
     }
 

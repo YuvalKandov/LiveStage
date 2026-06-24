@@ -85,7 +85,16 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
   // GET /v1/admin/logs — lifecycle + rejection logs (most recent first).
   app.get("/v1/admin/logs", (req, reply) => {
     requireAdmin(req);
-    const rows = db.prepare(`SELECT * FROM logs ORDER BY id DESC LIMIT 200`).all();
+    // Join the session's template id + type so a row identifies what activity it was (allowed
+    // identifiers only - never the trip's content/title; build spec §4.8 honest-metrics).
+    const rows = db
+      .prepare(
+        `SELECT l.*, s.template_id AS template_id, s.type AS type
+           FROM logs l
+           LEFT JOIN activity_sessions s ON s.id = l.session_id
+          ORDER BY l.id DESC LIMIT 200`,
+      )
+      .all();
     return reply.send({ logs: rows });
   });
 }

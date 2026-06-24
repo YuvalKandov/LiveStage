@@ -26,3 +26,6 @@ dist/
 
 # iOS local dev secrets (injected, never committed)
 DevelopmentSecrets.xcconfig
+
+# Astro docs site build cache (docs-site/)
+.astro/

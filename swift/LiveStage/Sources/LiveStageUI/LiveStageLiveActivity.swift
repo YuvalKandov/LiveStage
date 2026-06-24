@@ -21,9 +21,12 @@ public struct LiveStageLiveActivity: Widget {
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { expandedLeading(context).opacity(staleDim(context)) }
-                DynamicIslandExpandedRegion(.center) { expandedCenter(context).opacity(staleDim(context)) }
-                DynamicIslandExpandedRegion(.trailing) { expandedTrailing(context).opacity(staleDim(context)) }
+                // The whole top row lives in the wide center region (Apple-Music style); leading/trailing
+                // slots beside the camera are too narrow, so they're left unused. Negative top padding
+                // pulls the row up toward the camera line so it isn't floating low in the card.
+                DynamicIslandExpandedRegion(.center) {
+                    expandedCenter(context).opacity(staleDim(context)).padding(.top, -10)
+                }
                 DynamicIslandExpandedRegion(.bottom) { expandedBottom(context) }
             } compactLeading: {
                 compactLeading(context)
@@ -76,7 +79,13 @@ public struct LiveStageLiveActivity: Widget {
     // MARK: - Compact (clean when stale)
 
     @ViewBuilder private func compactLeading(_ context: Context) -> some View {
-        liveStageIcon(context.attributes.iconIdentifier).foregroundStyle(context.attributes.accentStyle.color)
+        // Fixed icon box so every template's glyph (airplane / clock / cube / bell) occupies the
+        // same width and sits identically next to the camera. SF Symbols have different intrinsic
+        // widths, which otherwise shifts the left edge from one template to the next.
+        liveStageIcon(context.attributes.iconIdentifier)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(context.attributes.accentStyle.color)
+            .frame(width: 24, alignment: .center)
     }
 
     @ViewBuilder private func compactTrailing(_ context: Context) -> some View {
@@ -97,27 +106,11 @@ public struct LiveStageLiveActivity: Widget {
 
     // MARK: - Expanded regions
 
-    @ViewBuilder private func expandedLeading(_ context: Context) -> some View {
-        switch context.state.payload {
-        case .journey(let s):   JourneyViews.expandedLeading(s, attributes: context.attributes)
-        case .countdown(let s): CountdownViews.expandedLeading(s, attributes: context.attributes)
-        case .progress(let s):  ProgressViews.expandedLeading(s, attributes: context.attributes)
-        }
-    }
-
     @ViewBuilder private func expandedCenter(_ context: Context) -> some View {
         switch context.state.payload {
-        case .journey(let s):   JourneyViews.expandedCenter(s)
-        case .countdown(let s): CountdownViews.expandedCenter(s)
+        case .journey(let s):   JourneyViews.expandedCenter(s, attributes: context.attributes)
+        case .countdown(let s): CountdownViews.expandedCenter(s, attributes: context.attributes)
         case .progress(let s):  ProgressViews.expandedCenter(s, attributes: context.attributes)
-        }
-    }
-
-    @ViewBuilder private func expandedTrailing(_ context: Context) -> some View {
-        switch context.state.payload {
-        case .journey(let s):   JourneyViews.expandedTrailing(s, attributes: context.attributes)
-        case .countdown(let s): CountdownViews.expandedTrailing(s, attributes: context.attributes)
-        case .progress(let s):  ProgressViews.expandedTrailing(s, attributes: context.attributes)
         }
     }
 

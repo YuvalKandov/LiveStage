@@ -66,6 +66,65 @@ struct CountdownText: View {
     }
 }
 
+/// Shared fixed width for the Dynamic Island **compact** trailing slot across every template, so
+/// the compact pill is the same length for Journey / Countdown / Progress (design: the compact pill
+/// has a consistent size; values are right-pinned within it). Sized to fit the longest typical value
+/// ("1h 42m", "MM:SS"); longer values shrink via `minimumScaleFactor` rather than widening the pill.
+@available(iOS 16.2, *)
+let liveStageCompactTrailingWidth: CGFloat = 40
+
+/// The expanded-view artwork tile: a rounded square holding the template glyph, sized like an
+/// album-art cover (Apple Music parity) so it fills the left side of the expanded row and anchors
+/// the title/subtitle beside it instead of a small lonely circle.
+@available(iOS 16.2, *)
+func expandedArtwork(_ iconIdentifier: String, accent: Color) -> some View {
+    RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .fill(accent.opacity(0.18))
+        .frame(width: 50, height: 50)
+        .overlay(
+            liveStageIcon(iconIdentifier)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(accent)
+        )
+        // Lift the cover a notch above the (centered) text so its top sits higher - the text then
+        // reads as centered against the cover, shrinking the perceived gap above (Apple Music look).
+        // `.offset` shifts it visually without changing the row's layout height.
+        .offset(y: -4)
+}
+
+/// The countdown timer as it appears in the Dynamic Island **compact** trailing slot.
+///
+/// `Text(timerInterval:)` (inside `CountdownText`) has no settled intrinsic width while it ticks,
+/// so in a compact region ActivityKit reserves a large fixed-width slot for it - which balloons
+/// the whole island wide, left-pins the leading icon, and pushes the value out of view. We pin the
+/// slot to the shared `liveStageCompactTrailingWidth` so the pill matches the other templates and
+/// stays tight: short values (`0:00`, `MM:SS`) sit at full size, a long `H:MM:SS` shrinks to fit
+/// via `minimumScaleFactor`. A fixed `.frame(width:)` + `.minimumScaleFactor` - never `fixedSize()`,
+/// which collapses/stops a `timerInterval` Text.
+@available(iOS 16.2, *)
+struct CompactCountdownText: View {
+    let date: Date
+
+    var body: some View {
+        CountdownText(date: date)
+            .font(.system(size: 15, weight: .semibold))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)   // long H:MM:SS shrinks to fit rather than widening the island
+            .foregroundStyle(.white)
+            .frame(width: liveStageCompactTrailingWidth, alignment: .trailing)
+    }
+}
+
+/// Coarse relative duration for a Journey `targetDate` ETA (design §04: "1h 42m"). Refreshes when
+/// the activity state updates - it is not a per-second ticking clock (that is Countdown's hero).
+@available(iOS 16.2, *)
+func shortDuration(until date: Date) -> String {
+    let secs = max(0, Int(date.timeIntervalSinceNow))
+    let h = secs / 3600, m = (secs % 3600) / 60
+    return h > 0 ? "\(h)h \(m)m" : "\(m)m"
+}
+
 /// Formats a 0…1 progress value as an integer percent string.
 @available(iOS 16.2, *)
 func percentString(_ value: Double) -> String {

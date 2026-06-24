@@ -20,14 +20,14 @@ export class PortalApiError extends Error {
 }
 
 async function adminFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${ADMIN_TOKEN}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${ADMIN_TOKEN}`,
+    ...((init.headers as Record<string, string>) ?? {}),
+  };
+  // Only declare a JSON body when one is actually sent. A bodyless POST (e.g. revoke) with
+  // Content-Type: application/json makes Fastify reject the request for an empty JSON body.
+  if (init.body != null) headers["Content-Type"] = "application/json";
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
   if (!res.ok) {

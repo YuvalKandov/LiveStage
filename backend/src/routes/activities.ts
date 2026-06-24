@@ -26,7 +26,8 @@ function withRejectLog<T>(
         projectId,
         sessionId,
         kind: "reject",
-        detail: `${e.field ? e.field + ": " : ""}${e.message}`,
+        // Carry the error code plus the actionable explanation (e.g. "validation · progress: must be 0..1").
+        detail: `${e.code} · ${e.field ? e.field + ": " : ""}${e.message}`,
         status: "error",
       });
     }

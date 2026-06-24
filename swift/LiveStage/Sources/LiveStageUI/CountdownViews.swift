@@ -68,10 +68,9 @@ enum CountdownViews {
     static func compactTrailing(_ state: CountdownState, attributes: LiveStageActivityAttributes) -> some View {
         // Compact stays tight (design "restraint in tight spaces"): at zero it shows a short "0:00",
         // not the full zeroStateLabel ("Boarding now") - that long label belongs on Lock/expanded.
-        // Size-to-content like the other templates; no fixedSize (it broke the self-ticking timer).
-        CountdownText(date: state.targetDate)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white)
+        // CompactCountdownText bounds the timer's width so the island sizes to content instead of
+        // stretching full-width (no fixedSize - it broke the self-ticking timer).
+        CompactCountdownText(date: state.targetDate)
     }
 
     // MARK: - Dynamic Island · minimal (icon only in V1 - design §05, locked)
@@ -82,42 +81,41 @@ enum CountdownViews {
 
     // MARK: - Dynamic Island · expanded regions (design §05)
 
-    static func expandedLeading(_ state: CountdownState, attributes: LiveStageActivityAttributes) -> some View {
+    /// Expanded center: the whole top row, Apple-Music style - album-art tile, then title + subtitle,
+    /// then the hero countdown + status on the right, all vertically centered. Built as one row in the
+    /// wide center region (the leading slot beside the camera is too narrow); leading/trailing are
+    /// unused. The timer keeps a one-line bounded frame (a ticking timerInterval can't use fixedSize -
+    /// it would collapse) (design §05).
+    static func expandedCenter(_ state: CountdownState, attributes: LiveStageActivityAttributes) -> some View {
         let accent = renderTint(attributes.accentStyle.color, completed: completed(state))
-        return HStack(spacing: 9) {
-            ZStack {
-                Circle().fill(Color.white.opacity(0.12)).frame(width: 30, height: 30)
-                liveStageIcon(attributes.iconIdentifier)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(accent)
-            }
-            VStack(alignment: .leading, spacing: 1) {
+        return HStack(spacing: 11) {
+            expandedArtwork(attributes.iconIdentifier, accent: accent)
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(state.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                    Text(state.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
                     if completed(state) { CompletedBadge(tint: accent) }
                 }
                 if let sub = state.subtitle, !sub.isEmpty {
-                    Text(sub).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(sub).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                CountdownText(date: state.targetDate, zeroLabel: attributes.labels.zeroStateLabel)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(width: 56, alignment: .trailing)
+                if let status = state.statusText, !status.isEmpty {
+                    Text(status).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         }
     }
 
-    @ViewBuilder
-    static func expandedCenter(_ state: CountdownState) -> some View {
-        if let status = state.statusText, !status.isEmpty {
-            Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
-        }
-    }
-
-    static func expandedTrailing(_ state: CountdownState, attributes: LiveStageActivityAttributes) -> some View {
-        CountdownText(date: state.targetDate, zeroLabel: attributes.labels.zeroStateLabel)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(renderTint(attributes.accentStyle.color, completed: completed(state)))
-            .frame(maxWidth: 90)
-    }
-
-    /// Expanded bottom: location (with a pin) → statusText → region removed (design §05).
+    /// Expanded bottom: location with a pin (statusText now rides the trailing row, so it isn't
+    /// repeated here); region removed when there's no location (design §05).
     @ViewBuilder
     static func expandedBottom(_ state: CountdownState) -> some View {
         if let location = state.location, !location.isEmpty {
@@ -125,8 +123,6 @@ enum CountdownViews {
                 Image(systemName: "mappin").font(.system(size: 12)).foregroundStyle(.secondary)
                 Text(location).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
-        } else if let status = state.statusText, !status.isEmpty {
-            Text(status).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 }

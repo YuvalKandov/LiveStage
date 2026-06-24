@@ -27,6 +27,14 @@ export function buildApp(db: Database): FastifyInstance {
     if (err instanceof HttpError) {
       return reply.status(err.status).send({ error: err.code, message: err.message, field: err.field });
     }
+    // Fastify's own errors (malformed/empty JSON body, bad content-type, schema validation) carry a
+    // 4xx statusCode and a code. Surface those honestly with their message instead of masking a client
+    // mistake as a 500; only a genuine 5xx (or no statusCode) is logged and reported as internal.
+    const e = err as { statusCode?: number; code?: string; message?: string };
+    const status = typeof e.statusCode === "number" ? e.statusCode : 500;
+    if (status >= 400 && status < 500) {
+      return reply.status(status).send({ error: e.code ?? "bad_request", message: e.message });
+    }
     app.log.error(err);
     return reply.status(500).send({ error: "internal", message: "Internal server error." });
   });

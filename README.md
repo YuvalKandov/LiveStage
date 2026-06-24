@@ -7,6 +7,10 @@ also reports lifecycle, delivery, and interaction events; the backend validates,
 aggregates them; and an Insights API returns statistics to the developer. Content, branding, and
 lifecycle are managed from a developer console (the portal) that visualizes those same APIs.
 
+<p align="center">
+  <a href="docs-site/public/island-expand.gif"><img src="docs-site/public/island-expand.gif" alt="A LiveStage Live Activity expanding in the Dynamic Island" width="400"></a>
+</p>
+
 Positioning, stated precisely: LiveStage is **server-configurable and state-driven, with native
 layouts compiled into the SDK**. The Live Activity views are native SwiftUI compiled into the
 widget extension, so a server cannot ship layout code. It is not "fully server-driven" and you do
@@ -16,11 +20,95 @@ branding, and the lifecycle. The SDK owns the pixels.
 The piece that makes LiveStage a service (not just a UI library) is the closed loop:
 render and update, report events, aggregate, Insights API, visualize.
 
+What LiveStage saves you from building yourself:
+
+- The ActivityKit state plumbing (request, content updates, lifecycle, the activity-id mapping).
+- The Lock Screen and Dynamic Island layouts, across all three island presentations.
+- Backend session and version management, with forward-only, server-authoritative state.
+- Update idempotency, retry with backoff, and offline event upload.
+- Analytics aggregation behind an Insights API, with honest metrics only.
+- A developer console for authoring templates and testing live updates by hand.
+
+## System architecture
+
+The seven separated parts and how they talk. The Live Activity views are native SwiftUI compiled
+into the widget extension; the backend never ships layout, only template config, typed state, and
+the Insights numbers.
+
+```mermaid
+flowchart LR
+    subgraph device["iOS app (device)"]
+        Demo["TripDemo app"]
+        SDK["LiveStage SDK<br/>(networking, polling, cache, events)"]
+        UI["LiveStageUI<br/>(SwiftUI renderers)"]
+        Widget["Widget Extension<br/>(Lock Screen + Dynamic Island)"]
+        Models["LiveStageModels<br/>(shared Codable contract)"]
+    end
+
+    subgraph service["Backend service"]
+        API["Fastify API<br/>/v1/activities, /v1/events, /v1/insights, /v1/admin"]
+        DB[("SQLite<br/>better-sqlite3, WAL")]
+    end
+
+    Portal["Portal console<br/>(React + Vite)"]
+
+    Demo --> SDK
+    SDK -. imports .-> Models
+    Widget -. imports .-> UI
+    Widget -. imports .-> Models
+    UI -. imports .-> Models
+
+    SDK -->|"mobile key: start / update / end / poll / events"| API
+    Portal -->|"admin token: templates, sessions, logs"| API
+    Portal -->|"service key: Insights reads"| API
+    API --> DB
+```
+
+## How LiveStage works end to end
+
+The mental model in one pass, so the moving parts make sense before you read the details:
+
+1. **Author once.** In the portal you create a project, generate keys, and define a template (its
+   type, branding, labels, deep-link base, and stale window). The template id is the string the app
+   passes to `start`.
+2. **Start an activity.** The app calls `LiveStage.start(templateId:...)`. The SDK fetches the
+   template config, validates the typed state, creates the server session (the source of truth),
+   then requests the ActivityKit activity and begins polling. The server session is created **before**
+   the device activity; if the device request fails, the SDK ends the orphan session and rethrows.
+3. **The server is authoritative.** State changes are versioned on the server, forward-only. An
+   update can come from your app (`LiveStage.update`) or from a person editing the session in the
+   portal. Either way it becomes a new server version.
+4. **The SDK polls and applies.** Every poll interval (8s default) the SDK asks the server for the
+   current version. If it is newer than what is applied, it pushes the new `ContentState` to the
+   activity, which re-renders the Lock Screen and Dynamic Island. Versions less than or equal to the
+   applied one are ignored.
+5. **The device reports events.** As the activity starts, applies state, is opened, or ends, the SDK
+   queues typed analytics events and uploads them in batches. This is automatic; the one thing you
+   wire up is `handleDeepLink` so taps are recorded.
+6. **The backend aggregates.** It validates and stores each event once (deduped by `eventId`),
+   appends to raw history, and rolls up daily aggregates.
+7. **You read the result.** The Insights API returns statistics behind a service key, and the portal
+   dashboard visualizes those same numbers.
+
+When the activity reaches a visually complete look (progress 1.0, countdown at zero, "arrived"), it
+renders the completed appearance but is **not** locked. Updates are accepted until the app explicitly
+calls `end`.
+
 ## The three templates
 
 - **Journey** - a trip with a title, current step, optional next step, progress, target time, status.
 - **Countdown** - a target time that ticks on-device, with a zero-state label when it reaches zero.
 - **Progress** - a staged task with a 0..1 progress value and an estimated completion time.
+
+<p align="center">
+  <a href="docs-site/src/assets/screenshots/07-lockscreen-journey.png"><img src="docs-site/src/assets/screenshots/07-lockscreen-journey.png" alt="Journey on the Lock Screen" width="130"></a>
+  &nbsp;&nbsp;
+  <a href="docs-site/src/assets/screenshots/08-lockscreen-countdown.png"><img src="docs-site/src/assets/screenshots/08-lockscreen-countdown.png" alt="Countdown on the Lock Screen" width="130"></a>
+  &nbsp;&nbsp;
+  <a href="docs-site/src/assets/screenshots/09-lockscreen-progress.png"><img src="docs-site/src/assets/screenshots/09-lockscreen-progress.png" alt="Progress on the Lock Screen" width="130"></a>
+</p>
+
+<p align="center"><sub>Journey, Countdown, and Progress on the Lock Screen. The Dynamic Island renders the same state across compact, expanded, and minimal.</sub></p>
 
 ## Repository layout (the seven separated parts)
 
@@ -57,8 +145,9 @@ LiveStage.handleDeepLink(_:) async throws -> LiveStageRoute?
 ```
 
 See [docs-public/integration-guide.md](docs-public/integration-guide.md) for how to add LiveStage to
-an app, and [docs-public/widget-extension-setup.md](docs-public/widget-extension-setup.md) for the
-Widget Extension starter.
+an app, [docs-public/widget-extension-setup.md](docs-public/widget-extension-setup.md) for the
+Widget Extension starter, and [docs-public/portal-guide.md](docs-public/portal-guide.md) for what the
+developer console does and how to operate it.
 
 ## Robustness (offline, retry, idempotency)
 
@@ -84,6 +173,11 @@ interactions and opens (taps on a deep link), distinct installations (never "uni
 best-effort `dismissal_observed`. The four hero numbers are apply-success rate, acknowledged sync
 latency, interaction rate, and update-rejection rate. Acknowledged latency is computed from the
 server clock only (version `accepted_at` to `state_applied` `received_at`), never the device clock.
+
+<p align="center">
+  <a href="docs-site/src/assets/screenshots/04-analytics-populated.png"><img src="docs-site/src/assets/screenshots/04-analytics-populated.png" alt="The analytics dashboard: four hero metrics with raw numerators and denominators, a daily time-series chart, a by-template table, and supporting totals" width="430"></a>
+</p>
+<p align="center"><sub>The portal analytics dashboard, reading the service-gated Insights API. Every rate shows its raw numerator and denominator.</sub></p>
 
 ## Running it locally
 
@@ -155,3 +249,29 @@ three planes: a `mobile` key (SDK writes and events, shippable), a `service` key
 server-only), and the admin token (portal and template management). The Insights API requires a
 `service` key and rejects a `mobile` key; activity-mutation routes reject a `service` key. The
 mobile key is not a true secret: server-side validation is the gate, not key possession.
+
+## Data model
+
+One SQLite file (`backend/livestage.db`, gitignored; tests run in-memory), defined in
+`backend/src/db/schema.sql`. Three groups of tables: slow-changing **configuration**, the
+live-activity **runtime state**, and the two-level **analytics** store.
+
+```mermaid
+erDiagram
+    projects ||--o{ api_keys : "owns"
+    projects ||--o{ templates : "owns"
+    projects ||--o{ activity_sessions : "owns"
+    templates ||--o{ activity_sessions : "instantiated by"
+    activity_sessions ||--o{ session_states : "version history"
+    activity_sessions ||--o{ analytics_events : "logically keyed"
+    activity_sessions ||--o{ applied_latencies : "acked versions"
+```
+
+- **Configuration** - `projects`, `api_keys` (only the secret's hash, resolved by public id), and `templates`.
+- **Live state** - `activity_sessions` (status `active | ended`, server `version`, `attributes_json` frozen at start), `session_states` (the versioned payload history and latency anchor), plus `start_idempotency` / `rejected_mutations` retry guards and `logs`.
+- **Analytics** - append-only `analytics_events` (identifiers and types only, never user content), pre-aggregated `daily_metrics`, and `applied_latencies` for the median-latency hero.
+
+The Insights API computes range metrics from the raw tables and daily charts from `daily_metrics`;
+it never echoes raw rows. See the full schema with every column in the
+[Data model](https://yuvalkandov.github.io/LiveStage/data-model/) docs, and how a raw event becomes
+a metric in [Analytics and metrics](https://yuvalkandov.github.io/LiveStage/analytics/).

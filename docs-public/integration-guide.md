@@ -198,7 +198,33 @@ curl -s http://localhost:8787/v1/insights/summary \
 ```
 
 The response includes opens and the interaction rate. You can also open the portal's analytics
-dashboard and session explorer to see the same numbers and the per-session timeline.
+dashboard and session explorer to see the same numbers and the per-session timeline; see
+[portal-guide.md](portal-guide.md) for what each console screen does.
+
+## Analytics: automatic, and how to read it
+
+You do not instrument analytics. The SDK emits the typed events on its own as the activity lives:
+`activity_started`, `state_applied`, `activity_ended`, and `sync_failed` are reported by
+`start`, `update`, the polling engine, and `end` without any extra calls from you. The **only**
+wiring you add is Step 7's `handleDeepLink`, which is what turns a tap into an `activity_opened` or
+`expanded_action_tapped` event. Events are queued, persisted to disk, batched, and deduped by
+`eventId`, so you never count or upload anything yourself.
+
+Each event carries identifiers and types only (session, anonymous installation, template, event
+type, version, timestamps), never any of your state content and never a user identity.
+
+To read the results, the server aggregates the events and exposes the **Insights API** behind a
+`service` key. The portal's Analytics tab visualizes these same endpoints:
+
+| Endpoint | What it returns |
+| --- | --- |
+| `GET /v1/insights/summary?from&to` | The four hero metrics (apply-success rate, acknowledged sync latency, interaction rate, update-rejection rate), the secondary `lateApplicationRate`, and supporting totals (sessions, opens, unique installations, updates, sync failures), each rate with its raw numerator and denominator. |
+| `GET /v1/insights/templates/:templateId?from&to` | The same summary scoped to one template. |
+| `GET /v1/insights/sessions/:sessionId` | The ordered event timeline for one session, with the acknowledged latency per applied version. Identifiers and types only, no content. |
+| `GET /v1/insights/timeseries?metric&from&to&interval=day[&templateId]` | Per-day chart rows for one metric (for example `opens`, `updateRejectionRate`, `applySuccessRate`, `interactionRate`, `averageLatencyMs`). |
+
+The range is optional ISO dates; omitting `from`/`to` covers all time. All four routes require a
+`service` key and reject a `mobile` key.
 
 ## Error handling
 
@@ -235,6 +261,34 @@ The SDK degrades gracefully when the network drops:
 - Analytics events are persisted to disk, survive app relaunch, and upload when the app next
   returns to the foreground or on the next successful poll. Re-uploads are deduped by event id, so
   nothing is double-counted.
+
+## Troubleshooting: nothing appears
+
+If `start` returns but you see no activity, work down this list. Most first-run failures are setup,
+not code:
+
+- **Live Activities are off.** Settings > Face ID & Passcode (or the app's settings) > Live
+  Activities must be enabled. If disabled, `start` throws `.activityKitUnavailable`.
+- **Wrong simulator for the Dynamic Island.** The Dynamic Island only renders on a **Pro** simulator
+  or device. The Lock Screen card renders anywhere, so check the Lock Screen first before concluding
+  rendering is broken.
+- **The minimal presentation looks missing.** The minimal Dynamic Island only appears when two or
+  more activities are live at once; with one activity you see compact, not minimal.
+- **`NSSupportsLiveActivities` missing.** It must be `YES` in the **app** target's Info.plist, not
+  the extension's.
+- **HTTP blocked in the simulator.** A local or LAN backend over plain HTTP needs the
+  `NSAllowsLocalNetworking` App Transport Security entry from Step 3. Without it the SDK gets a
+  network error and `start` fails.
+- **`configure` not called, or called after `start`.** A call before `configure` throws
+  `.notConfigured`. Configure once at launch.
+- **401 / 403 from the backend.** The mobile key is stale or wrong. Re-seeding the backend rotates
+  the keys, so resync `LIVESTAGE_API_KEY` in your xcconfig after `npm run seed`.
+- **The activity shows but never updates.** Confirm the backend is running and reachable (LAN IP, not
+  `localhost`, on a physical device), and that the session is still `active`. Updates apply within one
+  poll interval (8s default); the portal's Logs tab shows rejections with a reason.
+- **A tap records nothing.** The deep link must reach `handleDeepLink` from `.onOpenURL`, and your URL
+  scheme must be registered (Step 4). A URL with no known `source` or no matching session returns
+  `nil` and records nothing by design.
 
 ## What you do not configure
 

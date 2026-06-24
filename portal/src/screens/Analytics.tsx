@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   getSummary,
   getTemplateInsights,
@@ -10,7 +10,10 @@ import {
   type Rate,
   type TimeseriesResponse,
 } from "../insights";
+import { KeyRound } from "lucide-react";
 import { listTemplates } from "../api";
+import { PageHeader } from "../components/PageHeader";
+import { SERVICE_KEY_STORAGE, activeServiceKey } from "../config";
 
 // The analytics dashboard (build spec §10, design §09) - the console centerpiece. It reads the
 // service-gated Insights API and shows the four hero metrics next to their raw numerator/denominator,
@@ -41,6 +44,16 @@ function latency(ms: number | null): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
+/** Round x up to the nearest 1/2/5 x 10^n (works for fractions too, e.g. rates). */
+function niceCeil(x: number): number {
+  if (x <= 0) return 1;
+  const exp = Math.floor(Math.log10(x));
+  const base = Math.pow(10, exp);
+  const f = x / base;
+  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return nf * base;
+}
+
 export function Analytics() {
   // Default to the last 7 days. The range is half-open [from, to): `to` is exclusive, so the default
   // `to` is tomorrow's start to include everything up to now.
@@ -48,22 +61,25 @@ export function Analytics() {
   const [to, setTo] = useState(dayString(1));
   const [summary, setSummary] = useState<InsightsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [needsKey, setNeedsKey] = useState(false);
+  const [keyProblem, setKeyProblem] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setNeedsKey(false);
+    setKeyProblem(false);
     try {
       const data = await getSummary(dayStartIso(from), dayStartIso(to));
       setSummary(data);
     } catch (e) {
       setSummary(null);
       if (e instanceof NoServiceKeyError) {
-        setNeedsKey(true);
+        // No key at all.
+        setKeyProblem(true);
         setError(e.message);
       } else if (e instanceof InsightsApiError) {
+        // A 401 (unknown/revoked key) or 403 (a mobile key) is also fixable by setting a good key.
+        if (e.status === 401 || e.status === 403) setKeyProblem(true);
         setError(e.message);
       } else {
         setError(e instanceof Error ? e.message : String(e));
@@ -81,6 +97,10 @@ export function Analytics() {
 
   return (
     <div>
+      <PageHeader
+        title="Analytics"
+        subtitle="Hero metrics, daily trends, and supporting totals from the Insights API."
+      />
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="range-bar">
           <div>
@@ -98,16 +118,18 @@ export function Analytics() {
         </div>
       </div>
 
-      {error && (
+      {error && keyProblem && (
+        <div className="empty-state" style={{ marginBottom: 16 }}>
+          <KeyRound size={28} strokeWidth={1.75} aria-hidden />
+          <div className="empty-title">Connect a service key to see analytics</div>
+          <div className="empty-sub">{error}</div>
+          <ServiceKeyControl onSaved={load} />
+        </div>
+      )}
+
+      {error && !keyProblem && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="error">{error}</div>
-          {needsKey && (
-            <div className="muted" style={{ marginTop: 8 }}>
-              The dashboard calls the service-gated Insights API. Set VITE_SERVICE_KEY (the seeded
-              service key from backend/.seeded-keys.json) or generate one on the Projects &amp; keys
-              screen.
-            </div>
-          )}
         </div>
       )}
 
@@ -213,6 +235,22 @@ function TimeSeries(props: { from: string; to: string }) {
   const [data, setData] = useState<TimeseriesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hover, setHover] = useState<number | null>(null);
+  const [width, setWidth] = useState(640);
+
+  // Measure the chart container so the SVG fills the card width and reflows on resize.
+  const roRef = useRef<ResizeObserver | null>(null);
+  const setWrap = useCallback((node: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    if (!node) return;
+    setWidth(node.clientWidth || 640);
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setWidth(w);
+    });
+    ro.observe(node);
+    roRef.current = ro;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,7 +277,6 @@ function TimeSeries(props: { from: string; to: string }) {
   const isRate = data?.kind === "rate";
   const isLatency = data?.kind === "latency";
   const points = data?.series ?? [];
-  const max = points.reduce((m, p) => Math.max(m, p.value ?? 0), 0);
 
   function fmtValue(p: { value: number | null }): string {
     if (p.value === null) return "n/a";
@@ -248,39 +285,150 @@ function TimeSeries(props: { from: string; to: string }) {
     return String(p.value);
   }
 
+  // Responsive geometry: the SVG fills the card width (no fixed-width slab, no dead space) and the
+  // bars are distributed across it. A single day renders as one centered bar, not a full-width block.
+  const PAD = { left: 44, right: 16, top: 12, bottom: 26 };
+  const PLOT_H = 176;
+  const plotW = Math.max(40, width - PAD.left - PAD.right);
+  const slot = points.length > 0 ? plotW / points.length : plotW;
+  const barW = Math.max(6, Math.min(34, slot * 0.55));
+  // Themeable via CSS vars (SVG fill accepts var()); matches the hero color-coding by metric kind.
+  const barColor = isRate ? "var(--success)" : isLatency ? "var(--indigo)" : "var(--accent)";
+
+  // A tight "nice" axis: round the max up to a clean step (whole numbers for counts) so the tallest
+  // bar nearly reaches the top instead of floating under a lot of empty headroom. Rates cap at 100%.
+  const rawMax = points.reduce((m, p) => Math.max(m, p.value ?? 0), 0);
+  let step: number;
+  let axisMax: number;
+  if (rawMax <= 0) {
+    step = isRate ? 0.25 : 1;
+    axisMax = 1;
+  } else {
+    let s = niceCeil(rawMax / 4);
+    if (!isRate && !isLatency) s = Math.max(1, Math.ceil(s)); // counts get whole-number ticks
+    step = s;
+    axisMax = Math.ceil(rawMax / step) * step;
+    if (isRate && axisMax > 1) {
+      axisMax = 1;
+      step = 0.25;
+    }
+  }
+  const nSteps = Math.max(1, Math.round(axisMax / step));
+  const ticks = Array.from({ length: nSteps + 1 }, (_, i) => i * step);
+
+  function fmtAxis(v: number): string {
+    if (isRate) return `${Math.round(v * 100)}%`;
+    if (isLatency) return latency(v);
+    return String(Math.round(v));
+  }
+
+  const svgH = PAD.top + PLOT_H + PAD.bottom;
+  const baseY = PAD.top + PLOT_H;
+  const yOf = (v: number) => baseY - (v / axisMax) * PLOT_H;
+  const slotX = (i: number) => PAD.left + slot * i; // left edge of a column's slot
+  const centerX = (i: number) => slotX(i) + slot / 2; // center of the slot (bar + label)
+
+  // Thin the date labels so they do not overlap when the range is long.
+  const labelEvery = Math.max(1, Math.ceil(points.length / 12));
+
+  // Group the metric options by kind so the long list reads as three short groups, not one flat 14.
+  const metricGroups: { label: string; kind: "count" | "rate" | "latency" }[] = [
+    { label: "Counts", kind: "count" },
+    { label: "Rates", kind: "rate" },
+    { label: "Latency", kind: "latency" },
+  ];
+
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div className="row" style={{ alignItems: "center" }}>
         <h2>Daily time series</h2>
         <select className="metric-select" value={metric} onChange={(e) => setMetric(e.target.value)}>
-          {TIMESERIES_METRICS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
+          {metricGroups.map((g) => (
+            <optgroup key={g.kind} label={g.label}>
+              {TIMESERIES_METRICS.filter((m) => m.kind === g.kind).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
 
       {data?.note && <div className="muted" style={{ marginBottom: 8 }}>{data.note}</div>}
       {error && <div className="error">{error}</div>}
-      {!error && !loading && points.length === 0 && (
-        <div className="muted">No data for this metric in the selected range.</div>
-      )}
 
-      {points.length > 0 && (
-        <div className="chart">
-          {points.map((p) => {
-            const h = max > 0 && p.value !== null ? Math.max(4, (p.value / max) * 100) : 0;
-            const sub =
-              isRate && p.numerator !== undefined ? ` (${p.numerator}/${p.denominator})` : "";
-            return (
-              <div className="chart-col" key={p.date} title={`${p.date}: ${fmtValue(p)}${sub}`}>
-                <div className="chart-val">{fmtValue(p)}</div>
-                <div className="chart-bar" style={{ height: `${h}%` }} />
-                <div className="chart-date">{p.date.slice(5)}</div>
-              </div>
-            );
-          })}
+      {!error && (
+        <div className="chart-wrap" ref={setWrap} onMouseLeave={() => setHover(null)}>
+          {points.length === 0 ? (
+            <div className="muted">
+              {loading ? "Loading…" : "No data for this metric in the selected range."}
+            </div>
+          ) : (
+            <svg className="chart-svg" width={width} height={svgH} role="img" aria-label="Daily time series">
+              {/* Horizontal gridlines + y-axis value labels (formatted by metric kind). */}
+              {ticks.map((t) => (
+                <g key={t}>
+                  <line className="chart-grid" x1={PAD.left} x2={PAD.left + plotW} y1={yOf(t)} y2={yOf(t)} />
+                  <text className="chart-axis" x={PAD.left - 8} y={yOf(t) + 3} textAnchor="end">
+                    {fmtAxis(t)}
+                  </text>
+                </g>
+              ))}
+
+              {points.map((p, i) => {
+                const cx = centerX(i);
+                const bx = cx - barW / 2;
+                const sub = p.numerator !== undefined ? ` (${p.numerator}/${p.denominator})` : "";
+                return (
+                  <g key={p.date}>
+                    {p.value === null ? null : p.value === 0 ? (
+                      // A real zero day: a thin baseline marker so it is distinct from a missing day.
+                      <rect className="chart-zero" x={bx} y={baseY - 2} width={barW} height={2} />
+                    ) : (
+                      <rect
+                        x={bx}
+                        y={yOf(p.value)}
+                        width={barW}
+                        height={Math.max(1, baseY - yOf(p.value))}
+                        rx={3}
+                        fill={barColor}
+                        opacity={hover === null || hover === i ? 1 : 0.55}
+                      />
+                    )}
+                    {i % labelEvery === 0 && (
+                      <text className="chart-date" x={cx} y={baseY + 16} textAnchor="middle">
+                        {p.date.slice(5)}
+                      </text>
+                    )}
+                    {/* Full-height transparent hit area so hovering anywhere in the column shows the tip. */}
+                    <rect
+                      x={slotX(i)}
+                      y={PAD.top}
+                      width={slot}
+                      height={PLOT_H}
+                      fill="transparent"
+                      onMouseEnter={() => setHover(i)}
+                    >
+                      <title>{`${p.date}: ${fmtValue(p)}${sub}`}</title>
+                    </rect>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+
+          {hover !== null && points[hover] && (
+            <div className="chart-tip" style={{ left: centerX(hover), top: yOf(points[hover].value ?? 0) }}>
+              <div className="chart-tip-date">{points[hover].date}</div>
+              <div className="chart-tip-val">{fmtValue(points[hover])}</div>
+              {points[hover].numerator !== undefined && (
+                <div className="chart-tip-sub">
+                  {points[hover].numerator} / {points[hover].denominator}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -386,6 +534,67 @@ function Total(props: { label: string; value: ReactNode }) {
     <div className="total">
       <div className="total-value">{props.value}</div>
       <div className="total-label">{props.label}</div>
+    </div>
+  );
+}
+
+// Lets the developer point the dashboard at a service key without an env var or rebuild. The active
+// key is stored in this browser (localStorage); existing key rows on Projects & keys only hold the
+// lookup id and never the raw secret, so a stale/revoked key is replaced by pasting a good one here
+// (or generating a fresh one on Projects & keys and clicking "Use this service key for the dashboard").
+function ServiceKeyControl(props: { onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const hasStored = (() => {
+    try {
+      return !!localStorage.getItem(SERVICE_KEY_STORAGE);
+    } catch {
+      return false;
+    }
+  })();
+
+  function save() {
+    const key = value.trim();
+    if (!key) return;
+    try {
+      localStorage.setItem(SERVICE_KEY_STORAGE, key);
+    } catch {
+      // localStorage can be unavailable in a locked-down browser; fall through and reload anyway.
+    }
+    setValue("");
+    props.onSaved();
+  }
+
+  function clear() {
+    try {
+      localStorage.removeItem(SERVICE_KEY_STORAGE);
+    } catch {
+      // ignore
+    }
+    props.onSaved();
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="muted" style={{ marginBottom: 6 }}>
+        The dashboard reads the service-gated Insights API. Paste a <b>service</b> key (from
+        backend/.seeded-keys.json, or generate one on Projects &amp; keys), or set VITE_SERVICE_KEY.
+        {activeServiceKey() ? " A key is currently stored, but it was rejected." : ""}
+      </div>
+      <div className="keygen">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="ls_service_xxxxxxxx.yyyyyyyy"
+        />
+        <button className="primary" style={{ marginTop: 0 }} onClick={save} disabled={!value.trim()}>
+          Save &amp; reload
+        </button>
+        {hasStored && (
+          <button className="ghost" onClick={clear}>
+            Clear stored key
+          </button>
+        )}
+      </div>
     </div>
   );
 }

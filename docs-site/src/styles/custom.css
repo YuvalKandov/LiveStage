@@ -1,0 +1,169 @@
+/* LiveStage documentation theme.
+   Matches the SDK's native iOS look: SF system fonts, iOS system colors,
+   and the fixed template accent palette (Journey blue, Countdown orange,
+   Progress green). Source of truth: portal/src/preview/accent.ts. */
+
+:root {
+  /* iOS system font stack, mirrors portal/src/index.css. */
+  --sl-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+
+  /* Template accent palette (hex values match the SDK + portal). */
+  --ls-journey: #0a84ff; /* blue   */
+  --ls-countdown: #ff9f0a; /* orange */
+  --ls-progress: #30d158; /* green  */
+  --ls-indigo: #5e5ce6; /* secondary */
+  --ls-teal: #64d2ff; /* tertiary  */
+
+  /* Slightly smaller headings than the Starlight defaults. */
+  --sl-text-h1: 2rem;
+  --sl-text-h2: 1.5rem;
+  --sl-text-h3: 1.25rem;
+  --sl-text-h4: 1.1rem;
+  --sl-text-h5: 1rem;
+}
+
+/* Tone down the splash hero title so it does not dominate the page. */
+.hero h1 {
+  font-size: clamp(2rem, 1.4rem + 3vw, 3rem);
+}
+.hero .tagline {
+  font-size: var(--sl-text-lg);
+}
+
+/* Dark theme (Starlight default): accent tuned around iOS blue #0a84ff. */
+:root,
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #002b63;
+  --sl-color-accent: #0a84ff;
+  --sl-color-accent-high: #b9d6ff;
+}
+
+/* Light theme: darken the accent slightly for contrast on white. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #cfe3ff;
+  --sl-color-accent: #0066d6;
+  --sl-color-accent-high: #00305f;
+}
+
+/* Hero call-to-action buttons get the true iOS blue. */
+.hero .actions a[data-variant='primary'] {
+  background: var(--ls-journey);
+  border-color: var(--ls-journey);
+}
+
+/* Template accent chips used in cards and tables. */
+.ls-accent {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 0.35em;
+}
+.ls-accent.journey {
+  background: var(--ls-journey);
+}
+.ls-accent.countdown {
+  background: var(--ls-countdown);
+}
+.ls-accent.progress {
+  background: var(--ls-progress);
+}
+
+/* Screenshots: frame them so they read as product captures, not raw images. */
+.sl-markdown-content img[src*='screenshots'],
+.sl-markdown-content img.ls-shot {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Standalone images in prose get a consistent capped height and are centered.
+   Showcase grids (.ls-devices / .ls-showcase) keep their own layout. */
+.sl-markdown-content p > img {
+  display: block;
+  margin-inline: auto;
+  max-height: 260px;
+  max-width: min(320px, 100%);
+  width: auto;
+  border-radius: 10px;
+}
+/* The walkthrough GIF reads better a bit larger than the stills. */
+.sl-markdown-content p > img[src$='.gif'] {
+  max-height: 300px;
+  max-width: min(460px, 100%);
+}
+/* Every content image is click-to-expand. */
+.sl-markdown-content img {
+  cursor: zoom-in;
+}
+
+/* Click-to-expand overlay. */
+.ls-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+.ls-lightbox.open {
+  display: flex;
+}
+.ls-lightbox img {
+  max-width: 95vw;
+  max-height: 95vh;
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* Home showcase of rendered Live Activities (portrait phone stills). */
+.ls-devices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 200px));
+  gap: 1.25rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+.ls-devices figure {
+  margin: 0;
+}
+.ls-devices img {
+  width: 100%;
+  border-radius: 18px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+.ls-devices figcaption {
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-3);
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/* The home showcase strip of portal screenshots. */
+.ls-showcase {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.ls-showcase figure {
+  margin: 0;
+}
+.ls-showcase img {
+  width: 100%;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 12px;
+}
+.ls-showcase figcaption {
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-3);
+  margin-top: 0.4rem;
+  text-align: center;
+}

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { createTemplate, listProjects, listTemplates, updateTemplate, PortalApiError } from "../api";
+import { Plus } from "lucide-react";
 import { ACCENT_STYLES, ICON_ALLOWLIST, type AccentStyle, type Project, type TemplateConfig, type TemplateLabels, type TemplateType } from "../types";
 import { Preview, type PreviewDraft } from "../preview/Preview";
+import { PageHeader } from "../components/PageHeader";
+import { CopyButton } from "../components/CopyButton";
 
 // Templates list + typed config editor (build spec §10, design §09). Authoring goes through the
 // admin plane; the server validates the icon against the allowlist, the accent against the palette,
@@ -52,6 +55,15 @@ export function Templates() {
 
   return (
     <div>
+      <PageHeader
+        title="Templates"
+        subtitle="Author branding, labels, deep-link base, and stale window. Edits affect new activities only."
+        actions={
+          <button className="ghost" onClick={() => setEditing("new")}>
+            <Plus size={13} aria-hidden /> New template
+          </button>
+        }
+      />
       {error && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="error">{error}</div>
@@ -59,10 +71,6 @@ export function Templates() {
       )}
       <div className="cols">
         <div className="card">
-          <div className="row">
-            <h2>Templates</h2>
-            <button className="ghost" onClick={() => setEditing("new")}>New template</button>
-          </div>
           <label>Project</label>
           <select className="metric-select" style={{ width: "100%", margin: 0 }} value={projectId ?? ""} onChange={(e) => setProjectId(e.target.value)}>
             {projects.map((p) => (
@@ -182,7 +190,10 @@ function TemplateEditor(props: {
     <div className="card">
       <h2>{isNew ? "New template" : `Edit ${t.displayName}`}</h2>
 
-      <label>Template id {isNew ? "(unique per project)" : "(fixed)"}</label>
+      <div className="label-row">
+        <label>Template id {isNew ? "(unique per project)" : "(fixed)"}</label>
+        {!isNew && <CopyButton text={templateId} label="" title="Copy template id" />}
+      </div>
       <input value={templateId} disabled={!isNew} onChange={(e) => setTemplateId(e.target.value)} placeholder="e.g. ride-status" />
 
       <label>Template type</label>

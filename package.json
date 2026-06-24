@@ -1,0 +1,17 @@
+{
+  "name": "livestage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local-dev convenience runner for the LiveStage backend, portal, and docs site.",
+  "scripts": {
+    "setup": "npm --prefix backend install && npm --prefix portal install && npm --prefix docs-site install",
+    "seed": "npm --prefix backend run seed",
+    "dev": "concurrently -k -n backend,portal -c blue,green \"npm --prefix backend run dev\" \"npm --prefix portal run dev\"",
+    "dev:all": "concurrently -k -n backend,portal,docs -c blue,green,magenta \"npm --prefix backend run dev\" \"npm --prefix portal run dev\" \"npm --prefix docs-site run dev\"",
+    "docs": "npm --prefix docs-site run dev",
+    "test": "npm --prefix backend test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

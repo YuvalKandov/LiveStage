@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { Ban } from "lucide-react";
 import { createApiKey, createProject, listApiKeys, listProjects, revokeApiKey, PortalApiError } from "../api";
 import { SERVICE_KEY_STORAGE } from "../config";
+import { PageHeader } from "../components/PageHeader";
+import { CopyButton } from "../components/CopyButton";
 import type { ApiKeyMeta, CreatedApiKey, KeyType, Project } from "../types";
 
 // Projects & API keys (build spec §10, §12). The admin plane (admin token) manages projects and
@@ -31,6 +34,10 @@ export function ProjectsKeys() {
 
   return (
     <div>
+      <PageHeader
+        title="Projects & keys"
+        subtitle="Manage projects and the mobile and service keys the SDK and Insights API authenticate with."
+      />
       {error && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="error">Cannot reach the admin API ({error}).</div>
@@ -172,6 +179,9 @@ function KeysPanel(props: { projectId: string }) {
             New {created.keyType} key - copy it now, it is shown only once
           </div>
           <code className="reveal-key">{created.key}</code>
+          <div style={{ marginTop: 8 }}>
+            <CopyButton text={created.key} label="Copy key" />
+          </div>
           {created.keyType === "service" && (
             <button className="ghost" style={{ marginTop: 8 }} onClick={() => useForDashboard(created.key, created.id)}>
               Use this service key for the dashboard
@@ -190,11 +200,14 @@ function KeysPanel(props: { projectId: string }) {
         <div key={k.id} className="keyrow">
           <span className={`pill ${k.keyType}`}>{k.keyType}</span>
           <span className="sid">{k.id}</span>
+          <CopyButton text={k.id} label="" title="Copy key id" />
           <span className="muted">{k.label || "(no label)"}</span>
           {k.revoked ? (
             <span className="muted revoked">revoked</span>
           ) : (
-            <button className="ghost" onClick={() => revoke(k.id)}>Revoke</button>
+            <button className="ghost" onClick={() => revoke(k.id)}>
+              <Ban size={13} aria-hidden /> Revoke
+            </button>
           )}
         </div>
       ))}

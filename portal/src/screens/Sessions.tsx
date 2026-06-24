@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { listActiveSessions, updateSession, PortalApiError } from "../api";
+import { PageHeader } from "../components/PageHeader";
 import {
   getSessionTimeline,
   InsightsApiError,
@@ -50,6 +51,10 @@ export function Sessions() {
 
   return (
     <div>
+      <PageHeader
+        title="Sessions"
+        subtitle="Watch live sessions and drive their state by hand to test the full loop from the browser."
+      />
       {loadError && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="error">Cannot reach the backend ({loadError}). Is it running on the API base URL?</div>

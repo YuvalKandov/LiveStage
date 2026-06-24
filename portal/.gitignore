@@ -1,0 +1,3 @@
+# Local env (service key, overrides) — never commit
+.env.local
+.env.*.local

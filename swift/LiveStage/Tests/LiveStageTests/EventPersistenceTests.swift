@@ -139,13 +139,23 @@ final class EventPersistenceTests: XCTestCase {
 
     func testFlushPartialRemovesOnlyCompletedIds() async {
         let stub = StubUploader()
+        // Hold uploads as failures during setup so the flush `record` schedules is a guaranteed no-op
+        // (all events retained). Otherwise that scheduled flush races this test and can upload under
+        // the default complete-all mode before the partial mode below is set.
+        stub.setMode(.fail)
         let pipeline = EventPipeline(config: unconfigured(), store: InMemoryEventStore(), uploader: stub)
         await pipeline.record(.activityStarted, sessionId: "s", templateId: "t")
         await pipeline.record(.activityEnded, sessionId: "s", templateId: "t")
         let ids = await pipeline.queuedIds()
         stub.setMode(.complete([ids[0]])) // only the first event is completed
 
-        await pipeline.flush()
+        // Flush to a fixpoint of [ids[1]]: once ids[0] is removed, further flushes can only complete
+        // ids[0] (no longer present) and leave ids[1] untouched. The loop also absorbs an in-flight
+        // record-scheduled flush that would make a single explicit flush a no-op.
+        for _ in 0..<20 where await pipeline.queuedIds() != [ids[1]] {
+            await pipeline.flush()
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
         let remaining = await pipeline.queuedIds()
         XCTAssertEqual(remaining, [ids[1]], "only the completed id is removed; the rest is retained, in order")
     }

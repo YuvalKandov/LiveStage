@@ -53,6 +53,9 @@ export interface LogRow {
   detail: string | null;
   status: string;
   created_at: string;
+  // Joined from the session so a row identifies what activity it was (identifiers only, no content).
+  template_id?: string | null;
+  type?: string | null;
 }
 
 /** The backend's 400 error shape: { error, message, field }. */
