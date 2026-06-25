@@ -124,7 +124,7 @@ ios-demo/
   TripDemoWidget/           the Widget Extension starter (depends on LiveStageUI + LiveStageModels)
 backend/                    Node + TypeScript + Fastify + SQLite (better-sqlite3), ESM, run via tsx
 portal/                     React + Vite + TypeScript developer console
-docs-public/                committed docs: integration guide + widget extension setup
+docs-site/                  Starlight documentation site (deployed to GitHub Pages)
 ```
 
 The seven parts the project keeps separate: the public SDK API, the internal SDK engine, the
@@ -146,10 +146,10 @@ LiveStage.status(_:) async throws -> SessionStatus
 LiveStage.handleDeepLink(_:) async throws -> LiveStageRoute?
 ```
 
-See [docs-public/integration-guide.md](docs-public/integration-guide.md) for how to add LiveStage to
-an app, [docs-public/widget-extension-setup.md](docs-public/widget-extension-setup.md) for the
-Widget Extension starter, and [docs-public/portal-guide.md](docs-public/portal-guide.md) for what the
-developer console does and how to operate it.
+See [Getting started](https://yuvalkandov.github.io/LiveStage/getting-started/) for how to add
+LiveStage to an app, [Widget Extension setup](https://yuvalkandov.github.io/LiveStage/widget-setup/)
+for the Widget Extension starter, and [Developer console](https://yuvalkandov.github.io/LiveStage/console/)
+for what the developer console does and how to operate it.
 
 ## Robustness (offline, retry, idempotency)
 
