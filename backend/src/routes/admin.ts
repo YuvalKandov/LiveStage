@@ -5,7 +5,7 @@ import { HttpError } from "../util";
 import { requireAdmin } from "../auth/middleware";
 import { validatePayload } from "../validation/index";
 import { applyUpdate, rejectUpdate } from "../services/updateService";
-import type { SessionRow } from "../repo";
+import { currentState, type SessionRow } from "../repo";
 import type { TemplateType } from "../models";
 
 export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
@@ -26,16 +26,32 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
     ) as SessionRow[];
 
     return reply.send({
-      sessions: rows.map((r) => ({
-        sessionId: r.id,
-        templateId: r.template_id,
-        type: r.type,
-        status: r.status,
-        version: r.version,
-        lastUpdatedAt: r.last_updated_at,
-        startedAt: r.started_at,
-        deepLinkURL: r.deep_link_url,
-      })),
+      sessions: rows.map((r) => {
+        // The FROZEN attributes (icon/accent/labels as they were at start) plus the current state,
+        // so the portal can draw a faithful preview of what the activity shows right now: a later
+        // template edit must not change how a running activity renders (frozen by contract, §4.4).
+        const attributes = JSON.parse(r.attributes_json) as {
+          iconIdentifier?: string;
+          accentStyle?: string;
+          labels?: Record<string, unknown>;
+        };
+        return {
+          sessionId: r.id,
+          templateId: r.template_id,
+          type: r.type,
+          status: r.status,
+          version: r.version,
+          lastUpdatedAt: r.last_updated_at,
+          startedAt: r.started_at,
+          deepLinkURL: r.deep_link_url,
+          state: currentState(db, r.id),
+          attributes: {
+            iconIdentifier: attributes.iconIdentifier ?? null,
+            accentStyle: attributes.accentStyle ?? null,
+            labels: attributes.labels ?? {},
+          },
+        };
+      }),
     });
   });
 

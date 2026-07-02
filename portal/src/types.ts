@@ -1,5 +1,13 @@
 // Mirrors the slice of the backend contract the portal needs (build spec §4, §8.3).
 
+/** The frozen start-time attributes the admin list carries so a running activity can be previewed
+ *  faithfully (a later template edit never changes a running activity's look). */
+export interface AdminSessionAttributes {
+  iconIdentifier: string | null;
+  accentStyle: string | null;
+  labels: TemplateLabels;
+}
+
 export interface AdminSession {
   sessionId: string;
   templateId: string;
@@ -9,6 +17,8 @@ export interface AdminSession {
   lastUpdatedAt: string;
   startedAt: string;
   deepLinkURL: string;
+  state: { payload: TemplatePayload; metadata: { lastUpdatedAt: string; version: number } };
+  attributes: AdminSessionAttributes;
 }
 
 export interface JourneyPayload {

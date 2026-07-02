@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "seed": "tsx src/db/seed.ts",
+    "cleanup": "tsx scripts/cleanup-sessions.ts",
     "build": "tsc -p .",
     "test": "node --import tsx --test test/*.test.ts"
   },

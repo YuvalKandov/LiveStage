@@ -1,5 +1,14 @@
-import { useState, type ReactNode } from "react";
-import type { AccentStyle, TemplateLabels, TemplateType } from "../types";
+import { useEffect, useState, type ReactNode } from "react";
+import type {
+  AccentStyle,
+  AdminSessionAttributes,
+  CountdownPayload,
+  JourneyPayload,
+  ProgressPayload,
+  TemplateLabels,
+  TemplatePayload,
+  TemplateType,
+} from "../types";
 import { ACCENT_HEX, tint } from "./accent";
 import { Icon } from "./icons";
 
@@ -356,4 +365,130 @@ function progressSurfaces(d: PreviewDraft, terminal: boolean): Surfaces {
 /** "label · value" when a label is set, else just the value (LiveStageUI footerLeft). */
 function labelValue(label: string | null | undefined, value: string): string {
   return label && label.trim() ? `${label} · ${value}` : value;
+}
+
+// --- live preview (real session content, not sample text) -----------------------------------------
+
+/**
+ * The Lock Screen surface rendered from a session's ACTUAL current state and its frozen start
+ * attributes, so the session explorer shows what the activity looks like right now. Same visibility,
+ * priority, and terminal rules as the sample builders above; countdown values self-tick like the
+ * device's timer. Still an approximation - the iOS renderer owns the pixels.
+ */
+export function LiveLockPreview(props: { payload: TemplatePayload; attributes: AdminSessionAttributes }) {
+  // Ticks once a second so time-based values run instead of freezing at render time.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const icon = props.attributes.iconIdentifier ?? "airplane";
+  const rawAccent = (props.attributes.accentStyle ?? "blue") as AccentStyle;
+  const accentStyle: AccentStyle = ACCENT_HEX[rawAccent] ? rawAccent : "blue";
+  const labels = props.attributes.labels ?? {};
+
+  switch (props.payload.type) {
+    case "countdown":
+      return liveCountdownLock(props.payload, icon, accentStyle, labels, nowMs);
+    case "progress":
+      return liveProgressLock(props.payload, icon, accentStyle, labels);
+    default:
+      return liveJourneyLock(props.payload, icon, accentStyle, labels, nowMs);
+  }
+}
+
+function liveJourneyLock(p: JourneyPayload, icon: string, accentStyle: AccentStyle, labels: TemplateLabels, nowMs: number) {
+  const accent = ACCENT_HEX[accentStyle]; // Journey has no terminal styling, exactly as the renderer
+  const cd = p.targetDate ? countdownString(p.targetDate, nowMs) : null;
+  return (
+    <div className="pv-lock">
+      <div className="pv-lock-head">
+        <Icon name={icon} color={accent} />
+        {p.statusText && <span className="pv-accent" style={{ color: accent }}>{p.statusText}</span>}
+        <span className="pv-spacer" />
+        <span className="pv-muted">now</span>
+      </div>
+      <div className="pv-title-line pv-clamp2">{p.title}</div>
+      <div className="pv-sub pv-clamp1">{p.currentStep}</div>
+      {p.progress != null && <Bar value={p.progress} color={accent} />}
+      <div className="pv-foot">
+        {p.nextStep && <span className="pv-muted pv-clamp1">{labelValue(labels.nextStepLabel, p.nextStep)}</span>}
+        <span className="pv-spacer" />
+        {cd && (
+          <span className="pv-foot-right">
+            {labels.targetLabel && <span className="pv-muted">{labels.targetLabel}</span>}
+            <span className="pv-strong">{cd}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function liveCountdownLock(p: CountdownPayload, icon: string, accentStyle: AccentStyle, labels: TemplateLabels, nowMs: number) {
+  const cd = countdownString(p.targetDate, nowMs);
+  const terminal = cd === null; // target reached: muted accent + check + zeroStateLabel
+  const accent = tint(accentStyle, terminal);
+  const zero = labels.zeroStateLabel && labels.zeroStateLabel.trim() ? labels.zeroStateLabel : "0:00";
+  const subtitleLine = [p.subtitle, p.location].filter(Boolean).join(" · ");
+  return (
+    <div className="pv-lock">
+      <div className="pv-lock-head">
+        <Icon name={icon} color={accent} />
+        {terminal && <Check color={accent} />}
+        {p.statusText && <span className="pv-accent" style={{ color: accent }}>{p.statusText}</span>}
+        <span className="pv-spacer" />
+        <span className="pv-muted">now</span>
+      </div>
+      <div className="pv-title-line pv-clamp2">{p.title}</div>
+      {subtitleLine && <div className="pv-sub pv-clamp1">{subtitleLine}</div>}
+      <div className="pv-foot">
+        {labels.countdownLabel && <span className="pv-muted">{labels.countdownLabel}</span>}
+        <span className="pv-spacer" />
+        <span className="pv-strong pv-big" style={{ color: accent }}>{terminal ? zero : cd}</span>
+      </div>
+    </div>
+  );
+}
+
+function liveProgressLock(p: ProgressPayload, icon: string, accentStyle: AccentStyle, labels: TemplateLabels) {
+  const terminal = p.progress >= 1;
+  const accent = tint(accentStyle, terminal);
+  const time = p.estimatedCompletionDate
+    ? new Date(p.estimatedCompletionDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+  // completionTime joins the label and time with a space ("Done 14:30"), not the nextStep "·".
+  const cl = labels.completionLabel;
+  const completion = time ? (cl && cl.trim() ? `${cl} ${time}` : time) : null;
+  return (
+    <div className="pv-lock">
+      <div className="pv-lock-head">
+        <Icon name={icon} color={accent} />
+        {terminal && <Check color={accent} />}
+        <span className="pv-spacer" />
+        <span className="pv-muted">now</span>
+      </div>
+      <div className="pv-title-line pv-clamp2">{p.title}</div>
+      {p.currentStage && <div className="pv-sub pv-clamp1">{p.currentStage}</div>}
+      <Bar value={p.progress} color={accent} />
+      <div className="pv-foot">
+        {p.detailText && <span className="pv-muted pv-clamp1">{p.detailText}</span>}
+        <span className="pv-spacer" />
+        {completion && <span className="pv-strong pv-muted">{completion}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** "H:MM:SS" / "M:SS" until the target, or null once it has passed (the terminal state). */
+function countdownString(targetIso: string, nowMs: number): string | null {
+  const ms = Date.parse(targetIso) - nowMs;
+  if (Number.isNaN(ms) || ms <= 0) return null;
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }

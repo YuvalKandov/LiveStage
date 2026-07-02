@@ -147,6 +147,32 @@ test("start idempotency: same key+body returns original; different body conflict
   assert.equal(conflict.statusCode, 409);
 });
 
+test("the admin sessions list carries the current state and the frozen start attributes", async () => {
+  const { app, mobileKey } = makeTestApp();
+  const { sessionId } = (await start(app, mobileKey)).json();
+  // Advance once so "current" provably means the latest version, not the start state.
+  await app.inject({
+    method: "PATCH",
+    url: `/v1/activities/${sessionId}`,
+    headers: mobileAuth(mobileKey),
+    payload: { clientMutationId: randomUUID(), payload: journey({ currentStep: "Boarding", progress: 0.6 }) },
+  });
+
+  const list = await app.inject({
+    method: "GET",
+    url: "/v1/admin/activities?status=active",
+    headers: { authorization: "Bearer dev-admin-token" },
+  });
+  assert.equal(list.statusCode, 200);
+  const s = list.json().sessions.find((x: { sessionId: string }) => x.sessionId === sessionId);
+  assert.equal(s.state.metadata.version, 2);
+  assert.equal(s.state.payload.currentStep, "Boarding");
+  // Frozen at start from the template (the fixture seeds trip-status as airplane/blue).
+  assert.equal(s.attributes.iconIdentifier, "airplane");
+  assert.equal(s.attributes.accentStyle, "blue");
+  assert.equal(s.attributes.labels.nextStepLabel, "Next");
+});
+
 test("start idempotency keys are scoped per project: the same key value never collides across projects", async () => {
   const { app, db, mobileKey } = makeTestApp();
 

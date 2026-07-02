@@ -314,6 +314,32 @@ body { margin: 0; background: var(--bg); color: var(--text);
 .session:hover { background: var(--surface-2); }
 .session.selected { border-color: var(--accent); background: var(--accent-tint); }
 .session .sid { font-family: var(--font-mono); font-size: var(--fs-caption); }
+/* Poll-detected version bump: a brief flash so the console visibly reacts when an update lands. */
+.session.bumped { animation: bump-flash 1.5s ease; }
+@keyframes bump-flash {
+  0% { background: var(--success-tint); border-color: var(--success); }
+  100% { background: var(--surface); border-color: var(--border); }
+}
+.session.selected.bumped { animation: bump-flash-selected 1.5s ease; }
+@keyframes bump-flash-selected {
+  0% { background: var(--success-tint); border-color: var(--success); }
+  100% { background: var(--accent-tint); border-color: var(--accent); }
+}
+
+/* The copy-paste integration snippet on Projects & keys. */
+.snippet { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 14px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.55; margin: 0; color: var(--text); }
+
+/* Loading placeholders for the analytics heroes (shown before the first summary arrives). */
+.hero.skeleton { min-height: 92px; position: relative; overflow: hidden; }
+.hero.skeleton::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, var(--surface-2), transparent);
+  animation: skeleton-sweep 1.2s ease-in-out infinite; }
+@keyframes skeleton-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
 
 label { display: block; font-size: var(--fs-caption); color: var(--text-secondary); margin: 10px 0 4px; }
 .label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

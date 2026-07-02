@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Ban } from "lucide-react";
 import { createApiKey, createProject, listApiKeys, listProjects, revokeApiKey, PortalApiError } from "../api";
-import { SERVICE_KEY_STORAGE } from "../config";
+import { API_BASE, SERVICE_KEY_STORAGE } from "../config";
 import { PageHeader } from "../components/PageHeader";
 import { CopyButton } from "../components/CopyButton";
 import type { ApiKeyMeta, CreatedApiKey, KeyType, Project } from "../types";
@@ -16,6 +16,12 @@ export function ProjectsKeys() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The raw mobile key most recently generated for the selected project, folded into the snippet.
+  const [mobileKey, setMobileKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMobileKey(null); // a key belongs to its project; never show it under another one
+  }, [selected]);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -46,7 +52,7 @@ export function ProjectsKeys() {
       <div className="cols">
         <ProjectsPanel projects={projects} selected={selected} onSelect={setSelected} onCreated={loadProjects} />
         {selected ? (
-          <KeysPanel projectId={selected} />
+          <KeysPanel projectId={selected} onMobileKey={setMobileKey} />
         ) : (
           <div className="card">
             <h2>API keys</h2>
@@ -54,6 +60,51 @@ export function ProjectsKeys() {
           </div>
         )}
       </div>
+
+      {selected && <IntegrationSnippet mobileKey={mobileKey} />}
+    </div>
+  );
+}
+
+/** Copy-paste Swift integration for the selected project: configure once at launch, then start with
+ *  typed state. A freshly generated mobile key is filled in (it is shown raw exactly once). */
+function IntegrationSnippet(props: { mobileKey: string | null }) {
+  const key = props.mobileKey ?? "ls_mobile_<id>.<secret>";
+  const code = `import LiveStage
+import LiveStageModels
+
+// Once at launch:
+LiveStage.configure(
+    apiKey: "${key}",
+    baseURL: URL(string: "${API_BASE}")!
+)
+
+// Start a Live Activity from typed state:
+let session = try await LiveStage.start(
+    templateId: "trip-status",
+    deepLinkParameters: ["tripId": "123"],
+    state: .journey(JourneyState(
+        title: "Trip to Rome",
+        currentStep: "Boarding at gate B12",
+        progress: 0.6
+    ))
+)`;
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="row">
+        <h2>Integration snippet</h2>
+        <CopyButton text={code} label="Copy" />
+      </div>
+      <div className="muted" style={{ marginBottom: 10 }}>
+        {props.mobileKey
+          ? "Filled in with the mobile key you just generated (copy it now - it is shown only once)."
+          : "Generate a mobile key above and it is filled in here automatically."}{" "}
+        The full walkthrough (Widget Extension, deep links) is in the docs.
+      </div>
+      <pre className="snippet">
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }
@@ -110,7 +161,7 @@ function ProjectsPanel(props: {
   );
 }
 
-function KeysPanel(props: { projectId: string }) {
+function KeysPanel(props: { projectId: string; onMobileKey: (raw: string) => void }) {
   const [keys, setKeys] = useState<ApiKeyMeta[]>([]);
   const [keyType, setKeyType] = useState<KeyType>("service");
   const [label, setLabel] = useState("");
@@ -142,6 +193,7 @@ function KeysPanel(props: { projectId: string }) {
     try {
       const key = await createApiKey(props.projectId, keyType, label.trim());
       setCreated(key);
+      if (key.keyType === "mobile") props.onMobileKey(key.key);
       setLabel("");
       load();
     } catch (e) {

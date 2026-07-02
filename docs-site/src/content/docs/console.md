@@ -45,6 +45,8 @@ token. Here you:
   key format is `ls_<type>_<id>.<secret>`.
 - You can point the analytics dashboard at a generated service key; the portal stores it in this
   browser's local storage so the Analytics tab can call the Insights API.
+- Below the panels there is a copy-paste **integration snippet** (`configure` + `start` in Swift); a
+  freshly generated mobile key is filled into it automatically.
 
 ![Projects and keys screen, generating and revealing a key](../../assets/screenshots/02-projects-keys-reveal.png)
 
@@ -69,17 +71,22 @@ base, region labels, optional countdown `zeroStateLabel`, and the `staleAfterSec
 
 ### Sessions
 
-The live view of the running service and the main testing tool. It has three parts:
+The live view of the running service and the main testing tool. It has four parts:
 
 - **The live-sessions list** - the currently `active` server sessions with their version, template,
-  and last-updated time. A session that ends leaves the list. Server lifecycle is `active | ended`
-  only; `stale` and `dismissed` are local device reality, not server-known in V1.
+  and last-updated time. A row flashes when its version moves, and a session that ends leaves the
+  list. Server lifecycle is `active | ended` only; `stale` and `dismissed` are local device reality,
+  not server-known in V1.
+- **The live preview** - the selected session's current state rendered as a Lock Screen card, using
+  the branding frozen at start (a later template edit never changes a running activity's look). An
+  approximation for orientation; the device renders the pixels.
 - **The typed update form** - pick an active session and submit a new typed state. This PATCHes the
   session on the backend, bumps the server version, and the running app applies it within one poll
   interval (8s default). This is the quickest way to see the loop work end to end.
 - **The per-session event timeline (the session explorer)** - the ordered analytics events for one
   session (started, state applied, opened, expanded action, ended), with the acknowledged sync latency
-  per applied version. Identifiers, types, and timestamps only, never any of the user's state content.
+  per applied version. It refreshes on its own when the session's version moves. Identifiers, types,
+  and timestamps only, never any of the user's state content.
 
 ![Session explorer with an event timeline](../../assets/screenshots/05-session-timeline.png)
 

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { listActiveSessions, updateSession, PortalApiError } from "../api";
 import { PageHeader } from "../components/PageHeader";
+import { LiveLockPreview } from "../preview/Preview";
 import {
   getSessionTimeline,
   InsightsApiError,
@@ -26,12 +27,32 @@ export function Sessions() {
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Version-bump flash: rows whose server version moved since the previous poll, so the console
+  // visibly reacts the moment a device or portal update lands.
+  const [bumped, setBumped] = useState<Set<string>>(new Set());
+  const prevVersions = useRef<Map<string, number>>(new Map());
 
   const refresh = useCallback(async () => {
     try {
       const s = await listActiveSessions();
       setSessions(s.sessions);
       setLoadError(null);
+      const bumps: string[] = [];
+      for (const row of s.sessions) {
+        const prev = prevVersions.current.get(row.sessionId);
+        if (prev !== undefined && row.version > prev) bumps.push(row.sessionId);
+        prevVersions.current.set(row.sessionId, row.version);
+      }
+      if (bumps.length > 0) {
+        setBumped((cur) => new Set([...cur, ...bumps]));
+        setTimeout(() => {
+          setBumped((cur) => {
+            const next = new Set(cur);
+            for (const id of bumps) next.delete(id);
+            return next;
+          });
+        }, 1600);
+      }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     }
@@ -49,6 +70,8 @@ export function Sessions() {
     if (selected && !sessions.some((s) => s.sessionId === selected)) setSelected(null);
   }, [sessions, selected]);
 
+  const selectedSession = sessions.find((s) => s.sessionId === selected) ?? null;
+
   return (
     <div>
       <PageHeader
@@ -61,12 +84,30 @@ export function Sessions() {
         </div>
       )}
       <div className="cols">
-        <SessionsPanel sessions={sessions} selected={selected} onSelect={setSelected} onRefresh={refresh} />
+        <SessionsPanel sessions={sessions} selected={selected} bumped={bumped} onSelect={setSelected} onRefresh={refresh} />
         <div>
-          {selected && <SessionExplorer sessionId={selected} />}
-          <UpdateForm session={sessions.find((s) => s.sessionId === selected) ?? null} onApplied={refresh} />
+          {selectedSession && <LivePreviewCard session={selectedSession} />}
+          {selected && <SessionExplorer sessionId={selected} version={selectedSession?.version ?? 0} />}
+          <UpdateForm session={selectedSession ?? null} onApplied={refresh} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** What the selected session's Lock Screen shows right now: its actual current state rendered with
+ *  the branding frozen at start (a later template edit never changes a running activity's look). */
+function LivePreviewCard(props: { session: AdminSession }) {
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="row">
+        <h2>Live preview</h2>
+        <span className="badge">v{props.session.state.metadata.version}</span>
+      </div>
+      <div className="muted" style={{ marginBottom: 10 }}>
+        The current state on this session's Lock Screen. Approximate - the device renders the pixels.
+      </div>
+      <LiveLockPreview payload={props.session.state.payload} attributes={props.session.attributes} />
     </div>
   );
 }
@@ -75,7 +116,7 @@ export function Sessions() {
 // (GET /v1/insights/sessions/:id). Ordered by occurredAt (device time, for display only); state_applied
 // shows the applied version and its server-clock acknowledged latency; opens and expanded-action taps
 // are highlighted. No Live Activity state is shown - the endpoint carries none.
-function SessionExplorer(props: { sessionId: string }) {
+function SessionExplorer(props: { sessionId: string; version: number }) {
   const [timeline, setTimeline] = useState<SessionTimeline | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsKey, setNeedsKey] = useState(false);
@@ -102,9 +143,11 @@ function SessionExplorer(props: { sessionId: string }) {
     }
   }, [props.sessionId]);
 
+  // props.version re-triggers the load: when the poll sees a new server version, the open timeline
+  // refreshes on its own instead of waiting for a manual click.
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, props.version]);
 
   return (
     <div className="card" style={{ marginBottom: 20 }}>
@@ -181,6 +224,7 @@ function TimelineRow(props: { event: TimelineEvent }) {
 function SessionsPanel(props: {
   sessions: AdminSession[];
   selected: string | null;
+  bumped: Set<string>;
   onSelect: (id: string) => void;
   onRefresh: () => void;
 }) {
@@ -194,7 +238,7 @@ function SessionsPanel(props: {
       {props.sessions.map((s) => (
         <button
           key={s.sessionId}
-          className={`session${props.selected === s.sessionId ? " selected" : ""}`}
+          className={`session${props.selected === s.sessionId ? " selected" : ""}${props.bumped.has(s.sessionId) ? " bumped" : ""}`}
           onClick={() => props.onSelect(s.sessionId)}
         >
           <div className="row">

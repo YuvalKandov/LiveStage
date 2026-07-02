@@ -47,6 +47,28 @@ function latency(ms: number | null): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
+/** Animates a number from 0 to its target (ease-out) whenever the target changes; null stays null.
+ *  Purely presentational - the real value is always the target, shown in full within ~0.7s. */
+function useCountUp(target: number | null, ms = 700): number | null {
+  const [value, setValue] = useState<number | null>(target === null ? null : 0);
+  useEffect(() => {
+    if (target === null) {
+      setValue(null);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms);
+      setValue(target * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return value;
+}
+
 /** Round x up to the nearest 1/2/5 x 10^n (works for fractions too, e.g. rates). */
 function niceCeil(x: number): number {
   if (x <= 0) return 1;
@@ -110,6 +132,13 @@ export function Analytics() {
 
   const latencyHero = summary?.heroes.acknowledgedSyncLatencyMs;
 
+  // Count-up on the four hero values (presentational only; n/a cases stay n/a).
+  const applyAnim = useCountUp(summary?.heroes.applySuccessRate.rate ?? null);
+  const medianAnim = useCountUp(latencyHero && latencyHero.count > 0 ? latencyHero.medianMs : null);
+  const interactionAnim = useCountUp(summary?.heroes.interactionRate.rate ?? null);
+  const rejectionAnim = useCountUp(summary?.heroes.updateRejectionRate.rate ?? null);
+  const animPct = (n: number | null) => (n === null ? "n/a" : `${(n * 100).toFixed(1)}%`);
+
   return (
     <div>
       <PageHeader
@@ -154,13 +183,21 @@ export function Analytics() {
         </div>
       )}
 
+      {loading && !summary && !error && (
+        <div className="heroes">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="hero skeleton" />
+          ))}
+        </div>
+      )}
+
       {summary && latencyHero && fromIso && toIso && (
         <>
           <div className="heroes">
             <Hero
               tone="green"
               label="Apply-success rate"
-              value={pct(summary.heroes.applySuccessRate)}
+              value={animPct(applyAnim)}
               detail={
                 summary.heroes.applySuccessRate.denominator === 0
                   ? "No accepted post-start updates yet."
@@ -170,7 +207,7 @@ export function Analytics() {
             <Hero
               tone="indigo"
               label="Acknowledged sync latency (median)"
-              value={latencyHero.count === 0 ? "n/a" : latency(latencyHero.medianMs)}
+              value={medianAnim === null ? "n/a" : latency(medianAnim)}
               detail={
                 latencyHero.count === 0
                   ? "No acknowledgements yet."
@@ -180,7 +217,7 @@ export function Analytics() {
             <Hero
               tone="blue"
               label="Interaction rate"
-              value={pct(summary.heroes.interactionRate)}
+              value={animPct(interactionAnim)}
               detail={
                 summary.heroes.interactionRate.denominator === 0
                   ? "No sessions started in this range."
@@ -190,7 +227,7 @@ export function Analytics() {
             <Hero
               tone="plain"
               label="Update-rejection rate"
-              value={pct(summary.heroes.updateRejectionRate)}
+              value={animPct(rejectionAnim)}
               detail={
                 summary.heroes.updateRejectionRate.denominator === 0
                   ? "No post-start update attempts yet."
