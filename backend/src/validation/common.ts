@@ -50,13 +50,18 @@ export function checkProgress(value: unknown, required: boolean): void {
 // Naive/local datetimes (no zone) are rejected so every stored instant is unambiguous.
 const RFC3339_TZ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
+/** True when the value is a timezone-aware ISO-8601 instant string. */
+export function isInstant(value: unknown): value is string {
+  return typeof value === "string" && RFC3339_TZ.test(value) && !Number.isNaN(Date.parse(value));
+}
+
 /** Validates an optional/required timezone-aware ISO-8601 instant (e.g. Countdown's targetDate). */
 export function checkInstant(field: string, value: unknown, required: boolean): void {
   if (value === undefined || value === null) {
     if (required) fail(field, `${field} is required.`);
     return;
   }
-  if (typeof value !== "string" || !RFC3339_TZ.test(value) || Number.isNaN(Date.parse(value))) {
+  if (!isInstant(value)) {
     fail(field, `${field} must be a timezone-aware ISO-8601 instant (e.g. 2026-06-18T18:42:00Z).`);
   }
 }

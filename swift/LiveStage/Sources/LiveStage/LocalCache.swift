@@ -11,6 +11,10 @@ struct CachedSession: Codable, Sendable {
     let state: LiveStageContentState
     let status: String              // "active" | "ended" (server lifecycle, §8.5)
     let staleAfterSeconds: Int
+    // Persisted so a cold-start deep-link tap (the app process was killed; the tap relaunched it)
+    // can still be matched back to its session and recorded. Optional: older cache files lack them.
+    var deepLinkURL: String? = nil  // the composed primary URL, source-stripped form
+    var templateId: String? = nil
 }
 
 /// The whole on-disk cache snapshot: last known template configs + last applied state per session.
@@ -27,6 +31,8 @@ protocol LocalCache: Sendable {
     func putConfig(_ config: TemplateConfiguration)
     func session(for sessionId: String) -> CachedSession?
     func putSession(_ session: CachedSession)
+    /// All cached sessions, for lookups not keyed by sessionId (the cold-start deep-link match).
+    func sessions() -> [CachedSession]
 }
 
 /// File-backed `LocalCache` persisted as a single JSON snapshot in Application Support, mirroring
@@ -73,6 +79,11 @@ final class FileLocalCache: LocalCache, @unchecked Sendable {
         var snapshot = load()
         snapshot.sessions[session.sessionId] = session
         save(snapshot)
+    }
+
+    func sessions() -> [CachedSession] {
+        lock.lock(); defer { lock.unlock() }
+        return Array(load().sessions.values)
     }
 
     // MARK: - Disk (callers hold `lock`)

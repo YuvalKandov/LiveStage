@@ -53,18 +53,54 @@ final class SDKLogicTests: XCTestCase {
         XCTAssertEqual(parsed.parameters, ["tripId": "123"], "any source value is stripped from the public route")
     }
 
+    /// A fresh empty cache in a temp directory, so the deep-link tests never see the host machine's
+    /// real Application Support cache (the cold-start fallback consults the durable cache).
+    private func emptyCache() -> FileLocalCache {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("LiveStageSDKLogicTests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return FileLocalCache(directory: dir)
+    }
+
     func testHandleDeepLinkReturnsNilWhenNoSessionMatches() async throws {
         // Even with a valid source, a URL matching no known LiveStage session is not an open: it
         // returns nil and records nothing (no arbitrary link is classified as a Live Activity open).
-        let runtime = LiveStageRuntime(config: ConfigStore())
+        let runtime = LiveStageRuntime(config: ConfigStore(), cache: emptyCache())
         let route = try await runtime.handleDeepLink(URL(string: "triptogether://trip?tripId=999&source=activity_open")!)
         XCTAssertNil(route)
     }
 
     func testHandleDeepLinkReturnsNilForSchemelessURL() async throws {
-        let runtime = LiveStageRuntime(config: ConfigStore())
+        let runtime = LiveStageRuntime(config: ConfigStore(), cache: emptyCache())
         let route = try await runtime.handleDeepLink(URL(string: "not-a-deep-link")!)
         XCTAssertNil(route)
+    }
+
+    func testHandleDeepLinkMatchesFromDurableCacheOnColdStart() async throws {
+        // Cold start: the tap that launches the app is exactly when the in-memory URL map is empty
+        // (the process is new). The session must be matched from the durable cache instead of
+        // silently returning nil, or every cold-start open goes unrouted and uncounted.
+        let cache = emptyCache()
+        cache.putSession(CachedSession(
+            sessionId: "s1",
+            state: LiveStageContentState(
+                payload: .journey(JourneyState(title: "Trip to Rome", currentStep: "Boarding")),
+                metadata: StateMetadata(lastUpdatedAt: Date(), version: 1)
+            ),
+            status: "active",
+            staleAfterSeconds: 900,
+            deepLinkURL: "triptogether://trip?tripId=123",
+            templateId: "trip-status"
+        ))
+        let runtime = LiveStageRuntime(config: ConfigStore(), cache: cache)
+
+        // Source-less on purpose: it proves the cache match + routing without recording an event.
+        let route = try await runtime.handleDeepLink(URL(string: "triptogether://trip?tripId=123")!)
+        XCTAssertEqual(route?.sessionId, "s1")
+        XCTAssertEqual(route?.parameters, ["tripId": "123"])
+
+        // And an unknown URL still resolves nothing even with cached sessions present.
+        let miss = try await runtime.handleDeepLink(URL(string: "triptogether://trip?tripId=999")!)
+        XCTAssertNil(miss)
     }
 
     // MARK: - Forward-only sync decision (build spec §9)

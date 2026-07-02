@@ -27,6 +27,8 @@ export function Templates() {
   const [editing, setEditing] = useState<TemplateConfig | "new" | null>(null);
   const [previewDraft, setPreviewDraft] = useState<PreviewDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Shown at the list level: the editor unmounts on save, so a message inside it would never be seen.
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     listProjects()
@@ -59,7 +61,13 @@ export function Templates() {
         title="Templates"
         subtitle="Author branding, labels, deep-link base, and stale window. Edits affect new activities only."
         actions={
-          <button className="ghost" onClick={() => setEditing("new")}>
+          <button
+            className="ghost"
+            onClick={() => {
+              setSavedMessage(null);
+              setEditing("new");
+            }}
+          >
             <Plus size={13} aria-hidden /> New template
           </button>
         }
@@ -67,6 +75,11 @@ export function Templates() {
       {error && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="error">{error}</div>
+        </div>
+      )}
+      {savedMessage && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ok">{savedMessage}</div>
         </div>
       )}
       <div className="cols">
@@ -83,7 +96,10 @@ export function Templates() {
             <button
               key={t.id}
               className={`session${editing !== "new" && editing?.id === t.id ? " selected" : ""}`}
-              onClick={() => setEditing(t)}
+              onClick={() => {
+                setSavedMessage(null);
+                setEditing(t);
+              }}
             >
               <div className="row">
                 <span><span className="tic" style={{ background: ACCENT_HEX[t.accent] }} />{t.displayName}</span>
@@ -100,7 +116,8 @@ export function Templates() {
             projectId={projectId}
             template={editing === "new" ? null : editing}
             onDraft={setPreviewDraft}
-            onSaved={() => {
+            onSaved={(message) => {
+              setSavedMessage(message);
               loadTemplates();
               setEditing(null);
             }}
@@ -127,7 +144,7 @@ function TemplateEditor(props: {
   projectId: string;
   template: TemplateConfig | null;
   onDraft: (draft: PreviewDraft) => void;
-  onSaved: () => void;
+  onSaved: (message: string) => void;
   onCancel: () => void;
 }) {
   const t = props.template;
@@ -142,7 +159,6 @@ function TemplateEditor(props: {
   const [staleAfterSeconds, setStaleAfterSeconds] = useState(String(t?.staleAfterSeconds ?? 900));
   const [busy, setBusy] = useState(false);
   const [fieldError, setFieldError] = useState<{ field?: string; message: string } | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
 
   function setLabel(key: keyof TemplateLabels, value: string) {
     setLabels((cur) => ({ ...cur, [key]: value }));
@@ -155,9 +171,18 @@ function TemplateEditor(props: {
   }, [onDraft, type, icon, accent, labels]);
 
   async function save() {
-    setBusy(true);
     setFieldError(null);
-    setOk(null);
+    // Number("abc") is NaN, which JSON-serializes to null and the backend would silently fall back
+    // to its default instead of erroring. Reject it here with a clear message instead.
+    const stale = Number(staleAfterSeconds);
+    if (staleAfterSeconds.trim() === "" || !Number.isInteger(stale) || stale <= 0) {
+      setFieldError({
+        field: "staleAfterSeconds",
+        message: `Stale after must be a positive whole number of seconds (got "${staleAfterSeconds}").`,
+      });
+      return;
+    }
+    setBusy(true);
     const body: Record<string, unknown> = {
       type,
       displayName,
@@ -165,7 +190,7 @@ function TemplateEditor(props: {
       accent,
       deepLinkBase,
       labels,
-      staleAfterSeconds: Number(staleAfterSeconds),
+      staleAfterSeconds: stale,
     };
     try {
       if (isNew) {
@@ -173,8 +198,11 @@ function TemplateEditor(props: {
       } else {
         await updateTemplate(t.id, body);
       }
-      setOk("Saved. Template edits affect new activities only; running activities keep their frozen config.");
-      props.onSaved();
+      props.onSaved(
+        isNew
+          ? "Template created. It is available to new activities immediately."
+          : "Saved. Template edits affect new activities only; running activities keep their frozen config.",
+      );
     } catch (e) {
       if (e instanceof PortalApiError && (e.status === 400 || e.status === 409)) {
         setFieldError({ field: e.body.field, message: e.body.message });
@@ -255,7 +283,6 @@ function TemplateEditor(props: {
           {fieldError.message}
         </div>
       )}
-      {ok && <div className="ok">{ok}</div>}
     </div>
   );
 }

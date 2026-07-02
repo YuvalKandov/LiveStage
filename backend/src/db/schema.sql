@@ -67,12 +67,15 @@ CREATE TABLE IF NOT EXISTS session_states (
 
 -- Persistent start idempotency (retry-safe POST /v1/activities). A repeat with the same key and
 -- the same request returns the original session; a repeat with a DIFFERENT body is a 409 conflict.
+-- Keyed per project: the Idempotency-Key namespace belongs to the caller's project, so the same
+-- key value from two projects never collides.
 CREATE TABLE IF NOT EXISTS start_idempotency (
-  key TEXT PRIMARY KEY,
+  key TEXT NOT NULL,
   project_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   request_hash TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, key),
   FOREIGN KEY (session_id) REFERENCES activity_sessions(id)
 );
 

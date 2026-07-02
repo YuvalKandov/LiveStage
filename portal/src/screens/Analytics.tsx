@@ -23,9 +23,12 @@ import { SERVICE_KEY_STORAGE, activeServiceKey } from "../config";
 // explicitly not proof of what a user saw. A zero-denominator rate reads "n/a" with a worded reason,
 // never 0% or a bare 0/0.
 
-/** A date input value (YYYY-MM-DD) -> a UTC instant at the start of that day. */
-function dayStartIso(day: string): string {
-  return new Date(`${day}T00:00:00.000Z`).toISOString();
+/**
+ * A date input value (YYYY-MM-DD) -> a UTC instant at the start of that day, or null when the input
+ * is cleared/partial (a date input can hold "" mid-edit; building a Date from it throws mid-render).
+ */
+function dayStartIso(day: string): string | null {
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day}T00:00:00.000Z` : null;
 }
 
 /** YYYY-MM-DD for `daysFromNow` days from today (UTC), for the date inputs. */
@@ -63,15 +66,27 @@ export function Analytics() {
   const [error, setError] = useState<string | null>(null);
   const [keyProblem, setKeyProblem] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Latest-wins guard: changing the range while a slow request is in flight must not let the older
+  // response resolve last and overwrite the newer summary (the charts have the same guard).
+  const loadSeq = useRef(0);
+
+  const fromIso = dayStartIso(from);
+  const toIso = dayStartIso(to);
 
   const load = useCallback(async () => {
+    const fromIso = dayStartIso(from);
+    const toIso = dayStartIso(to);
+    if (!fromIso || !toIso) return; // a cleared date input; wait until both dates are set again
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     setKeyProblem(false);
     try {
-      const data = await getSummary(dayStartIso(from), dayStartIso(to));
+      const data = await getSummary(fromIso, toIso);
+      if (seq !== loadSeq.current) return; // superseded by a newer range
       setSummary(data);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setSummary(null);
       if (e instanceof NoServiceKeyError) {
         // No key at all.
@@ -85,7 +100,7 @@ export function Analytics() {
         setError(e instanceof Error ? e.message : String(e));
       }
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [from, to]);
 
@@ -133,7 +148,13 @@ export function Analytics() {
         </div>
       )}
 
-      {summary && latencyHero && (
+      {(!fromIso || !toIso) && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="muted">Pick both a From and a To date to load the range.</div>
+        </div>
+      )}
+
+      {summary && latencyHero && fromIso && toIso && (
         <>
           <div className="heroes">
             <Hero
@@ -195,9 +216,9 @@ export function Analytics() {
             </div>
           </div>
 
-          <TimeSeries from={dayStartIso(from)} to={dayStartIso(to)} />
+          <TimeSeries from={fromIso} to={toIso} />
 
-          <TemplateComparison projectId={summary.projectId} from={dayStartIso(from)} to={dayStartIso(to)} />
+          <TemplateComparison projectId={summary.projectId} from={fromIso} to={toIso} />
 
           <div className="card" style={{ marginTop: 16 }}>
             <h2>Totals for the range</h2>

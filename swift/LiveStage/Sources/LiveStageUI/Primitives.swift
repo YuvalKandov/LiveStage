@@ -55,8 +55,12 @@ struct CountdownText: View {
     var zeroLabel: String? = nil
 
     var body: some View {
-        if date > Date() {
-            Text(timerInterval: Date()...date, countsDown: true)
+        // One `now` for both the comparison and the range: a second Date() call can land past the
+        // target (the zero-transition re-renders at exactly that moment), and an inverted
+        // ClosedRange is a runtime crash inside the widget extension.
+        let now = Date()
+        if date > now {
+            Text(timerInterval: now...date, countsDown: true)
                 .monospacedDigit()
         } else if let zeroLabel, !zeroLabel.isEmpty {
             Text(zeroLabel)

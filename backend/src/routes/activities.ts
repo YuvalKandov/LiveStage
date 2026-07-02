@@ -63,8 +63,8 @@ export function registerActivityRoutes(app: FastifyInstance, db: Database): void
     // session; a repeat with a DIFFERENT body is a 409 conflict (build spec: retry-safe start).
     if (idempotencyKey) {
       const prior = db
-        .prepare(`SELECT session_id, request_hash FROM start_idempotency WHERE key = ?`)
-        .get(idempotencyKey) as { session_id: string; request_hash: string } | undefined;
+        .prepare(`SELECT session_id, request_hash FROM start_idempotency WHERE project_id = ? AND key = ?`)
+        .get(key.projectId, idempotencyKey) as { session_id: string; request_hash: string } | undefined;
       if (prior) {
         if (prior.request_hash !== requestHash) {
           throw new HttpError(409, "idempotency_conflict", "Idempotency-Key reused with a different request.");

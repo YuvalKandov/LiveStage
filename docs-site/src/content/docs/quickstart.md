@@ -133,7 +133,7 @@ curl -s "http://localhost:8787/v1/insights/summary?from=2026-06-01T00:00:00Z&to=
 ```json
 {
   "projectId": "demo-project",
-  "range": { "from": "2026-06-01T00:00:00Z", "to": "2026-07-01T00:00:00Z", "evaluationTime": "2026-06-24T12:35:10.000Z", "templateId": null },
+  "range": { "from": "2026-06-01T00:00:00.000Z", "to": "2026-07-01T00:00:00.000Z", "evaluationTime": "2026-06-24T12:35:10.000Z", "templateId": null },
   "heroes": {
     "applySuccessRate": { "rate": 0.95, "numerator": 19, "denominator": 20 },
     "acknowledgedSyncLatencyMs": { "averageMs": 420, "medianMs": 380, "count": 19 },
@@ -141,7 +141,7 @@ curl -s "http://localhost:8787/v1/insights/summary?from=2026-06-01T00:00:00Z&to=
     "updateRejectionRate": { "rate": 0.05, "numerator": 1, "denominator": 20 }
   },
   "secondary": { "lateApplicationRate": { "rate": 0.1, "numerator": 2, "denominator": 20 } },
-  "totals": { "sessionsStarted": 10, "sessionsEnded": 6, "opens": 5, "expandedActionTaps": 1, "uniqueInstallations": 3, "updateAttempts": 21, "acceptedUpdates": 20, "rejectedUpdates": 1, "syncFailures": 0, "updatesPerSession": 2.0 }
+  "totals": { "sessionsStarted": 10, "sessionsEnded": 6, "opens": 5, "expandedActionTaps": 1, "uniqueInstallations": 3, "updatesApplied": 19, "updatesPerSession": 1.9, "acceptedUpdates": 20, "rejectedUpdates": 1, "updateAttempts": 21, "syncFailures": 0 }
 }
 ```
 

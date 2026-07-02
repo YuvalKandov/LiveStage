@@ -294,8 +294,10 @@ How the recorded open works: the primary tap carries an internal `source=activit
 so `handleDeepLink` records an `activity_opened` event. A tap on the explicit Link inside the
 expanded Dynamic Island carries `source=expanded_action` and records `expanded_action_tapped`. The
 SDK strips the `source` parameter before returning the route to you, so your navigation never sees
-it. A URL with no source, an unknown source, or one that matches no known LiveStage session records
-nothing and returns `nil` (for `nil`, treat it as a normal app URL).
+it. A URL that matches no known LiveStage session records nothing and returns `nil` (treat it as a
+normal app URL). A URL that does match a session but carries no source, or an unknown one, still
+returns a route so you can navigate, but records no interaction: a source-less link is never counted
+as a Live Activity open.
 
 There is no "user expanded" or impression event. The expand gesture is handled by the system and a
 SwiftUI render does not prove a human saw it, so `expanded_action_tapped` is a separate intentional

@@ -77,7 +77,7 @@ more than one day.
 | Metric | Definition |
 | --- | --- |
 | **Apply-success rate** | distinct `(session, version)` acks divided by `accepted_updates`. The initial `start` state is a session start, not an update. |
-| **Acknowledged sync latency** | server-clock only: version `accepted_at` (T1) to `state_applied` ack `received_at` (T2). Median from raw latencies, average from daily metrics. |
+| **Acknowledged sync latency** | server-clock only: version `accepted_at` (T1) to `state_applied` ack `received_at` (T2). The summary's median and average both come from the raw latency rows in range; only the daily chart's per-day average reads daily metrics. A median is never derived from daily averages. |
 | **Interaction rate** | distinct sessions with an interaction divided by sessions. Never `opens + expanded_action_taps`, because one session can have both. |
 | **Update-rejection rate** | `rejected_updates` divided by `update_attempts`, post-start PATCHes only. This is *server-rejected updates*, not all failures. |
 

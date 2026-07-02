@@ -231,6 +231,48 @@ test("events/batch requires a mobile key", async () => {
   assert.equal(res.statusCode, 401);
 });
 
+test("a state_applied ack for version 1 (the start state) is stored but never counted", async () => {
+  const { app, db, mobileKey } = makeTestApp();
+  const sessionId = await startSession(app, mobileKey); // creates session_states version 1
+
+  const res = await upload(app, mobileKey, [event({ sessionId, eventType: "state_applied", version: 1 })]);
+  assert.equal(res.json().accepted, 1); // the raw event is kept for the timeline
+
+  // ...but the start state is not an update: no latency row, no daily apply/ack bump (which would
+  // let the per-day applySuccessRate exceed 100%, since version 1 is not an accepted_update).
+  const latRows = (db.prepare(`SELECT COUNT(*) AS n FROM applied_latencies WHERE session_id = ?`).get(sessionId) as { n: number }).n;
+  assert.equal(latRows, 0);
+  const daily = db
+    .prepare(`SELECT updates_applied, ack_count FROM daily_metrics WHERE template_id = 'trip-status'`)
+    .get() as { updates_applied: number; ack_count: number } | undefined;
+  assert.equal(daily?.updates_applied ?? 0, 0);
+  assert.equal(daily?.ack_count ?? 0, 0);
+});
+
+test("metadata values must be short strings: nested or oversized values are discarded", async () => {
+  const { app, mobileKey } = makeTestApp();
+  const sessionId = await startSession(app, mobileKey);
+
+  const res = await upload(app, mobileKey, [
+    event({ sessionId, eventType: "activity_opened", metadata: { source: { tripTitle: "Paris trip" } } }),
+    event({ sessionId, eventType: "activity_opened", metadata: { source: "x".repeat(65) } }),
+    event({ sessionId, eventType: "activity_opened", metadata: { source: "lock_screen" } }),
+  ]);
+  const body = res.json();
+  assert.equal(body.accepted, 1);
+  assert.equal(body.discarded.length, 2);
+  assert.ok(body.discarded.every((d: { reason: string }) => d.reason === "invalid_metadata"));
+});
+
+test("a non-instant occurredAt is discarded, not stored", async () => {
+  const { app, db, mobileKey } = makeTestApp();
+  const sessionId = await startSession(app, mobileKey);
+  const res = await upload(app, mobileKey, [event({ sessionId, occurredAt: "yesterday at noon" })]);
+  assert.equal(res.json().discarded[0].reason, "invalid_event");
+  const count = (db.prepare(`SELECT COUNT(*) AS n FROM analytics_events`).get() as { n: number }).n;
+  assert.equal(count, 0);
+});
+
 test("sessions_started and sessions_ended are recorded as server-op daily counters", async () => {
   const { app, db, mobileKey } = makeTestApp();
   const sessionId = await startSession(app, mobileKey);

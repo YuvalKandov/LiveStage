@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { makeTestApp, mobileAuth, journey, PROJECT_ID } from "./helpers";
+import { generateKey } from "../src/auth/keys";
 
 async function start(app: ReturnType<typeof makeTestApp>["app"], key: string, headers = {}) {
   const res = await app.inject({
@@ -144,6 +145,37 @@ test("start idempotency: same key+body returns original; different body conflict
     payload: { templateId: "trip-status", deepLinkParameters: { tripId: "999" }, payload: journey() },
   });
   assert.equal(conflict.statusCode, 409);
+});
+
+test("start idempotency keys are scoped per project: the same key value never collides across projects", async () => {
+  const { app, db, mobileKey } = makeTestApp();
+
+  // A second project whose SDK happens to send the same Idempotency-Key value.
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO projects (id, name, created_at) VALUES ('other-project', 'Other', ?)`).run(now);
+  const other = generateKey("mobile");
+  db.prepare(
+    `INSERT INTO api_keys (id, project_id, key_hash, key_type, label, revoked, created_at)
+     VALUES (?, 'other-project', ?, 'mobile', '', 0, ?)`,
+  ).run(other.id, other.keyHash, now);
+  db.prepare(
+    `INSERT INTO templates
+       (id, project_id, template_id, type, display_name, icon, accent, deep_link_base,
+        labels_json, zero_state_label, stale_after_seconds, created_at, updated_at)
+     VALUES ('t-other', 'other-project', 'trip-status', 'journey', 'Trip status', 'airplane', 'blue',
+             'othertrip://trip', '{}', NULL, 900, ?, ?)`,
+  ).run(now, now);
+
+  const shared = "shared-idempotency-key";
+  const first = await start(app, mobileKey, { "idempotency-key": shared });
+  const second = await start(app, other.raw, { "idempotency-key": shared });
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200, "the second project's start is not a conflict");
+  assert.notEqual(first.json().sessionId, second.json().sessionId, "each project gets its own session");
+
+  // The replay stays project-local: repeating within a project returns that project's session.
+  const replay = await start(app, other.raw, { "idempotency-key": shared });
+  assert.equal(replay.json().sessionId, second.json().sessionId);
 });
 
 test("a service key is rejected on mobile activity routes (403, wrong key type)", async () => {

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Database } from "better-sqlite3";
 import { HttpError, isoDate, nowIso } from "../util";
+import { checkInstant } from "../validation/common";
 import { requireServiceKey } from "../auth/middleware";
 
 // The developer-facing Insights API (build spec §8.3/§8.6). Service-key only. Every hero metric is
@@ -198,13 +199,19 @@ export function computeSummary(db: Database, args: SummaryArgs) {
   };
 }
 
-/** Validates an optional ISO range param, or throws 400. */
+/**
+ * Validates an optional range param as a timezone-aware ISO-8601 instant (the same rule payload
+ * dates get) and normalizes it to canonical UTC form. The range is compared lexically in SQL, so a
+ * merely-parseable value (e.g. "07/01/2026") or a non-UTC offset would silently match the wrong
+ * rows; strict-validate-then-normalize makes the string comparison sound. Throws 400 otherwise.
+ */
 function parseRange(query: { from?: string; to?: string }): { from: string; to: string } {
-  const from = query.from ?? FAR_PAST;
-  const to = query.to ?? FAR_FUTURE;
-  if (Number.isNaN(Date.parse(from))) throw new HttpError(400, "validation", `Invalid 'from' date: ${query.from}`, "from");
-  if (Number.isNaN(Date.parse(to))) throw new HttpError(400, "validation", `Invalid 'to' date: ${query.to}`, "to");
-  return { from, to };
+  const parse = (field: "from" | "to", value: string | undefined, fallback: string): string => {
+    if (value === undefined) return fallback;
+    checkInstant(field, value, true);
+    return new Date(value).toISOString();
+  };
+  return { from: parse("from", query.from, FAR_PAST), to: parse("to", query.to, FAR_FUTURE) };
 }
 
 // metadata is content-free by contract (§4.8); filter the response to the allowed keys defensively.
@@ -357,7 +364,10 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database): void
     if (interval !== "day") throw new HttpError(400, "validation", "Only interval=day is supported in V1.", "interval");
 
     const { from, to } = parseRange(q);
-    const params = { projectId: key.projectId, templateId: q.templateId ?? null, fromDate: isoDate(from), toDate: isoDate(to) };
+    // Half-open [from, to) like the summary: the last day covered is the one containing to - 1ms,
+    // so a midnight `to` doesn't add a chart row the range totals don't count.
+    const lastDay = isoDate(new Date(Date.parse(to) - 1).toISOString());
+    const params = { projectId: key.projectId, templateId: q.templateId ?? null, fromDate: isoDate(from), toDate: lastDay };
     const where = `WHERE project_id = @projectId ${q.templateId ? "AND template_id = @templateId" : ""} AND date >= @fromDate AND date <= @toDate`;
 
     let series: unknown[];

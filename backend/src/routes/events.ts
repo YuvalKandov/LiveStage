@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Database } from "better-sqlite3";
 import { HttpError, isoDate, nowIso } from "../util";
+import { isInstant } from "../validation/common";
 import { requireMobileKey } from "../auth/middleware";
 import { bumpDaily } from "../analytics/daily";
 
@@ -69,7 +70,8 @@ export function registerEventRoutes(app: FastifyInstance, db: Database): void {
       if (
         typeof raw.sessionId !== "string" ||
         typeof raw.installationId !== "string" ||
-        typeof raw.occurredAt !== "string"
+        // occurredAt is stored and used to order the timeline; a non-instant string would sort as garbage.
+        !isInstant(raw.occurredAt)
       ) {
         discarded.push({ eventId, reason: "invalid_event" });
         continue;
@@ -79,9 +81,15 @@ export function registerEventRoutes(app: FastifyInstance, db: Database): void {
         continue;
       }
       if (raw.metadata !== undefined && raw.metadata !== null) {
+        // Values are gated too, not just keys: metadata is a content-free qualifier slot, and a
+        // nested object or free text under an allowed key would smuggle content into analytics.
+        const entries =
+          typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+            ? Object.entries(raw.metadata as Record<string, unknown>)
+            : null;
         if (
-          typeof raw.metadata !== "object" ||
-          Object.keys(raw.metadata as object).some((k) => !ALLOWED_METADATA_KEYS.has(k))
+          !entries ||
+          entries.some(([k, v]) => !ALLOWED_METADATA_KEYS.has(k) || typeof v !== "string" || v.length > 64)
         ) {
           discarded.push({ eventId, reason: "invalid_metadata" });
           continue;
@@ -177,6 +185,10 @@ function ingestOne(db: Database, a: IngestArgs): "accepted" | "duplicate" {
  * (session, version) via the applied_latencies PK, so a duplicate ack can't inflate apply-success.
  */
 function recordAppliedLatency(db: Database, a: IngestArgs): void {
+  // The start state (version 1) never produces an ack by contract; a client that sends one anyway
+  // must not bump the daily apply/latency aggregates (the range heroes already filter version >= 2,
+  // but the per-day applySuccessRate would exceed 100% without this).
+  if (a.version == null || a.version < 2) return;
   const stateRow = db
     .prepare(`SELECT accepted_at FROM session_states WHERE session_id = ? AND version = ?`)
     .get(a.session.id, a.version) as { accepted_at: string } | undefined;

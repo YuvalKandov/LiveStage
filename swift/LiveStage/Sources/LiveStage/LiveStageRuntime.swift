@@ -94,7 +94,9 @@ actor LiveStageRuntime {
             sessionId: sessionId,
             state: state,
             status: status,
-            staleAfterSeconds: staleAfterSeconds[sessionId] ?? 900
+            staleAfterSeconds: staleAfterSeconds[sessionId] ?? 900,
+            deepLinkURL: deepLinkURLs[sessionId],
+            templateId: sessionTemplates[sessionId]
         ))
     }
 
@@ -156,7 +158,8 @@ actor LiveStageRuntime {
         // Seed the durable cache so status() can answer offline and the last state is retained (§5.4).
         cache.putSession(CachedSession(
             sessionId: resp.sessionId, state: contentState, status: "active",
-            staleAfterSeconds: resp.staleAfterSeconds
+            staleAfterSeconds: resp.staleAfterSeconds,
+            deepLinkURL: resp.deepLinkURL, templateId: templateId
         ))
         #endif
 
@@ -192,16 +195,24 @@ actor LiveStageRuntime {
             }
             throw error
         }
+        // Forward-only here too (build spec §9), same rule as the poller: while this response was in
+        // flight the actor may have applied a newer polled version, and re-rendering this one would
+        // regress the screen until the next poll.
+        let applied = appliedVersions[session.sessionId] ?? 0
+        guard SyncDecision.shouldApply(incoming: resp.version, applied: applied) else { return }
         let staleSecs = staleAfterSeconds[session.sessionId] ?? 900
         let staleDate = resp.lastUpdatedAt.addingTimeInterval(TimeInterval(staleSecs))
         #if os(iOS)
-        await bridge.update(sessionId: session.sessionId, state: resp.state, staleDate: staleDate)
-        lastAppliedContent[session.sessionId] = resp.state
-        scheduleZeroTransition(sessionId: session.sessionId)
         // Acknowledge the device application (build spec §9): the server computes acknowledged sync
         // latency from this. Only on a genuine forward apply (version >= 2) — never v1, never the
-        // zero-transition (which re-applies the same version).
-        await pipeline.record(.stateApplied, sessionId: session.sessionId, templateId: templateId, version: resp.version)
+        // zero-transition (which re-applies the same version) - and only when the bridge actually
+        // rendered it: with no live activity (dismissed / relaunched process) nothing was applied,
+        // and acking it would fabricate apply-success and latency rows.
+        if await bridge.update(sessionId: session.sessionId, state: resp.state, staleDate: staleDate) {
+            lastAppliedContent[session.sessionId] = resp.state
+            scheduleZeroTransition(sessionId: session.sessionId)
+            await pipeline.record(.stateApplied, sessionId: session.sessionId, templateId: templateId, version: resp.version)
+        }
         #endif
         appliedVersions[session.sessionId] = resp.version
         cacheSession(session.sessionId, state: resp.state, status: "active")
@@ -222,7 +233,8 @@ actor LiveStageRuntime {
         if let existing = cache.session(for: session.sessionId) {
             cache.putSession(CachedSession(
                 sessionId: existing.sessionId, state: existing.state, status: "ended",
-                staleAfterSeconds: existing.staleAfterSeconds
+                staleAfterSeconds: existing.staleAfterSeconds,
+                deepLinkURL: existing.deepLinkURL, templateId: existing.templateId
             ))
         }
         clearSession(session.sessionId)
@@ -263,7 +275,16 @@ actor LiveStageRuntime {
     func handleDeepLink(_ url: URL) async throws -> LiveStageRoute? {
         guard let parsed = DeepLink.parse(url) else { return nil }
         let tapped = strippingSource(url)
-        guard let sessionId = deepLinkURLs.first(where: { $0.value == tapped })?.key else { return nil }
+        var matched = deepLinkURLs.first(where: { $0.value == tapped })?.key
+        if matched == nil, let cached = cache.sessions().first(where: { $0.deepLinkURL == tapped }) {
+            // Cold start: the tap that launched this process is exactly when the in-memory map is
+            // empty. Rehydrate the session from the durable cache so the open is routed and counted.
+            matched = cached.sessionId
+            deepLinkURLs[cached.sessionId] = cached.deepLinkURL ?? tapped
+            staleAfterSeconds[cached.sessionId] = cached.staleAfterSeconds
+            if let cachedTemplate = cached.templateId { sessionTemplates[cached.sessionId] = cachedTemplate }
+        }
+        guard let sessionId = matched else { return nil }
         let templateId = sessionTemplates[sessionId] ?? ""
 
         let source: InteractionSource
@@ -309,6 +330,16 @@ actor LiveStageRuntime {
 
     private func recordDismissal(sessionId: String) async {
         guard let templateId = sessionTemplates[sessionId] else { return }
+        // The activity is gone from the device (build spec §9: stop polling on dismissed). Keep
+        // polling and it would fetch every later portal update, no-op the render, and fabricate
+        // state_applied acks for states no one can see. The server session stays `active` (manual
+        // dismissal is not server-known in V1) - only the device-side machinery stops.
+        stopPolling(sessionId: sessionId)
+        #if os(iOS)
+        bridge.remove(sessionId: sessionId)
+        #endif
+        zeroTransitionTasks[sessionId]?.cancel()
+        zeroTransitionTasks.removeValue(forKey: sessionId)
         await pipeline.record(.dismissalObserved, sessionId: sessionId, templateId: templateId)
     }
 
@@ -344,11 +375,13 @@ actor LiveStageRuntime {
         let staleSecs = staleAfterSeconds[sessionId] ?? resp.staleAfterSeconds
         let staleDate = resp.lastUpdatedAt.addingTimeInterval(TimeInterval(staleSecs))
         #if os(iOS)
-        await bridge.update(sessionId: sessionId, state: resp.state, staleDate: staleDate)
-        lastAppliedContent[sessionId] = resp.state
-        scheduleZeroTransition(sessionId: sessionId)
-        // A portal/backend-originated forward apply is also acknowledged (server-clock latency, §9).
-        await pipeline.record(.stateApplied, sessionId: sessionId, templateId: sessionTemplates[sessionId] ?? "", version: resp.version)
+        // A portal/backend-originated forward apply is also acknowledged (server-clock latency, §9),
+        // but only when the bridge actually rendered it - never for a session whose activity is gone.
+        if await bridge.update(sessionId: sessionId, state: resp.state, staleDate: staleDate) {
+            lastAppliedContent[sessionId] = resp.state
+            scheduleZeroTransition(sessionId: sessionId)
+            await pipeline.record(.stateApplied, sessionId: sessionId, templateId: sessionTemplates[sessionId] ?? "", version: resp.version)
+        }
         #endif
         appliedVersions[sessionId] = resp.version
         cacheSession(sessionId, state: resp.state, status: "active")

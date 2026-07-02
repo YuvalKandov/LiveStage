@@ -161,17 +161,22 @@ final class LiveActivityController: ObservableObject {
     func endAll() {
         let snapshot = Array(sessions.values)
         Task {
+            // Drop only the handles whose end actually succeeded. If the backend is down, the
+            // activities are still on the Lock Screen and these handles are the only way to retry -
+            // discarding them would strand the activities until the system timeout.
             for session in snapshot {
                 do {
                     try await LiveStage.end(session)
+                    sessions.removeValue(forKey: session.sessionId)
+                    lastPayloads.removeValue(forKey: session.sessionId)
                     print("[TripDemo] ended \(session.sessionId)")
                 } catch {
                     report(error, context: "end")
                 }
             }
-            sessions.removeAll()
-            lastPayloads.removeAll()
-            primarySessionId = nil
+            if let primary = primarySessionId, sessions[primary] == nil {
+                primarySessionId = sessions.keys.sorted().last
+            }
             refreshLiveIds()
         }
     }

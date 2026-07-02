@@ -43,14 +43,25 @@ final class ActivityBridge {
         }
     }
 
-    func update(sessionId: String, state: LiveStageContentState, staleDate: Date) async {
-        guard let activity = activities[sessionId] else { return }
+    /// Applies new content to the session's activity. Returns whether anything was actually applied:
+    /// with no live activity for the session (dismissed, or a relaunched process that never requested
+    /// one) this is a no-op and the caller must NOT record a `state_applied` ack for it.
+    @discardableResult
+    func update(sessionId: String, state: LiveStageContentState, staleDate: Date) async -> Bool {
+        guard let activity = activities[sessionId] else { return false }
         await activity.update(ActivityContent(state: state, staleDate: staleDate))
+        return true
     }
 
     func end(sessionId: String) async {
         guard let activity = activities[sessionId] else { return }
         await activity.end(nil, dismissalPolicy: .immediate)
+        activities.removeValue(forKey: sessionId)
+    }
+
+    /// Drops the handle for an activity the system already removed (a local dismissal). No `end`
+    /// call is made - there is nothing left on the device to end.
+    func remove(sessionId: String) {
         activities.removeValue(forKey: sessionId)
     }
 

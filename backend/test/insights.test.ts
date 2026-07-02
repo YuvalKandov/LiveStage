@@ -215,6 +215,24 @@ test("an invalid range date is a 400", async () => {
   assert.equal((await summary(app, serviceKey, "?from=not-a-date")).statusCode, 400);
 });
 
+test("range params are strict ISO instants, normalized to UTC before the lexical SQL comparison", async () => {
+  const { app, db, serviceKey } = makeTestApp();
+
+  // Merely Date.parse-able is not enough: these would compare lexically against ISO timestamps and
+  // silently match the wrong rows, so they must be rejected outright.
+  assert.equal((await summary(app, serviceKey, "?from=07/01/2026")).statusCode, 400);
+  assert.equal((await summary(app, serviceKey, "?to=2026-07-01")).statusCode, 400); // date-only, no zone
+
+  // An offset instant must hit the same rows as its UTC equivalent: raw "T11:00+02:00" would
+  // lexically exclude this 10:00Z row, normalized to 09:00Z it includes it.
+  const sid = randomUUID();
+  craftSession(db, sid, "2026-07-01T09:30:00.000Z");
+  craftAccepted(db, sid, 2, "2026-07-01T10:00:00.000Z");
+  const body = (await summary(app, serviceKey, "?from=2026-07-01T11%3A00%3A00%2B02%3A00")).json();
+  assert.equal(body.range.from, "2026-07-01T09:00:00.000Z");
+  assert.equal(body.heroes.applySuccessRate.denominator, 1);
+});
+
 // ---------------------------------------------------------------------------------------------------
 // Session timeline (GET /v1/insights/sessions/:sessionId)
 // ---------------------------------------------------------------------------------------------------
@@ -399,4 +417,19 @@ test("timeseries averageLatencyMs is total_sync_latency_ms / ack_count per day",
   craftDaily(db, "2026-07-01", { total_sync_latency_ms: 90, ack_count: 3 }); // avg 30
   const body = (await timeseries(app, serviceKey, "?metric=averageLatencyMs&from=2026-07-01T00:00:00.000Z&to=2026-07-31T00:00:00.000Z")).json();
   assert.deepEqual(body.series[0], { date: "2026-07-01", value: 30, numerator: 90, denominator: 3 });
+});
+
+test("timeseries range is half-open like the summary: a midnight `to` excludes that day's row", async () => {
+  const { app, db, serviceKey } = makeTestApp();
+  craftDaily(db, "2026-07-01", { sessions_started: 1 });
+  craftDaily(db, "2026-07-02", { sessions_started: 2 });
+  craftDaily(db, "2026-07-03", { sessions_started: 3 });
+
+  // to = July 3 at midnight: the summary counts nothing on July 3, so the chart must not either.
+  const midnight = (await timeseries(app, serviceKey, "?metric=sessionsStarted&from=2026-07-01T00:00:00.000Z&to=2026-07-03T00:00:00.000Z")).json();
+  assert.deepEqual(midnight.series.map((r: { date: string }) => r.date), ["2026-07-01", "2026-07-02"]);
+
+  // to = mid-day July 3: part of July 3 is in range, so its daily row appears.
+  const midday = (await timeseries(app, serviceKey, "?metric=sessionsStarted&from=2026-07-01T00:00:00.000Z&to=2026-07-03T12:00:00.000Z")).json();
+  assert.deepEqual(midday.series.map((r: { date: string }) => r.date), ["2026-07-01", "2026-07-02", "2026-07-03"]);
 });

@@ -71,9 +71,9 @@ base, region labels, optional countdown `zeroStateLabel`, and the `staleAfterSec
 
 The live view of the running service and the main testing tool. It has three parts:
 
-- **The live-sessions list** - every server session and its status (`active` or `ended`), version,
-  template, and last-updated time. Server lifecycle is `active | ended` only; `stale` and `dismissed`
-  are local device reality, not server-known in V1.
+- **The live-sessions list** - the currently `active` server sessions with their version, template,
+  and last-updated time. A session that ends leaves the list. Server lifecycle is `active | ended`
+  only; `stale` and `dismissed` are local device reality, not server-known in V1.
 - **The typed update form** - pick an active session and submit a new typed state. This PATCHes the
   session on the backend, bumps the server version, and the running app applies it within one poll
   interval (8s default). This is the quickest way to see the loop work end to end.

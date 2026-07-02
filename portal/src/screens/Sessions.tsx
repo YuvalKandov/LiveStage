@@ -298,6 +298,7 @@ function JourneyForm(props: { session: AdminSession; onApplied: () => void }) {
   const [currentStep, setCurrentStep] = useState("Boarding at gate B12");
   const [nextStep, setNextStep] = useState("Flight AZ809");
   const [progress, setProgress] = useState("0.6");
+  const [targetLocal, setTargetLocal] = useState(defaultLocalDateTime(90));
   const [statusText, setStatusText] = useState("Delayed 10 min");
   const { busy, fieldError, okMessage, submit } = useUpdateSubmit(props.session, props.onApplied);
 
@@ -309,6 +310,9 @@ function JourneyForm(props: { session: AdminSession; onApplied: () => void }) {
       nextStep: nextStep || null,
       statusText: statusText || null,
       progress: progress.trim() === "" ? null : Number(progress),
+      // An update replaces the whole payload, so leaving this empty removes the target line from the
+      // activity. Defaulted to a future time so an update doesn't silently strip "Arrives at ...".
+      targetDate: targetLocal ? new Date(targetLocal).toISOString() : null,
     };
     submit(payload);
   }
@@ -319,6 +323,8 @@ function JourneyForm(props: { session: AdminSession; onApplied: () => void }) {
       <TextField label="Current step" value={currentStep} onChange={setCurrentStep} />
       <TextField label="Next step (optional)" value={nextStep} onChange={setNextStep} />
       <TextField label="Progress 0–1 (optional; try 1.4 to see a rejection)" value={progress} onChange={setProgress} />
+      <label>Target / arrival time (optional; empty removes it from the activity)</label>
+      <input type="datetime-local" value={targetLocal} onChange={(e) => setTargetLocal(e.target.value)} />
       <TextField label="Status text (optional)" value={statusText} onChange={setStatusText} />
     </FormShell>
   );
@@ -370,7 +376,9 @@ function ProgressForm(props: { session: AdminSession; onApplied: () => void }) {
       type: "progress",
       title,
       currentStage: currentStage || null,
-      progress: Number(progress),
+      // Number("") is 0, which would silently submit a valid 0% update. NaN serializes to null, so
+      // an empty field surfaces the server's "progress is required" error instead.
+      progress: Number(progress.trim() === "" ? NaN : progress),
       estimatedCompletionDate: etaLocal ? new Date(etaLocal).toISOString() : null,
       detailText: detailText || null,
     };
