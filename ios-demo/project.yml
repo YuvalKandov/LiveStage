@@ -57,7 +57,7 @@ targets:
     info:
       path: TripDemo/Info.plist
       properties:
-        CFBundleDisplayName: TripTogether
+        CFBundleDisplayName: LiveStage Demo
         NSSupportsLiveActivities: true            # required to host Live Activities (build spec §2, §7)
         UILaunchScreen: {}
         UIApplicationSceneManifest:

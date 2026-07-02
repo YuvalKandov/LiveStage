@@ -9,7 +9,7 @@ struct ContentView: View {
         TabView {
             TripsView(controller: controller)
                 .tabItem {
-                    Label("Trips", systemImage: "airplane")
+                    Label("Home", systemImage: "house.fill")
                 }
             DeveloperView(controller: controller)
                 .tabItem {

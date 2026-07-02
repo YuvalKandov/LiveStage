@@ -38,7 +38,7 @@ struct TripsView: View {
                 .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("TripTogether")
+            .navigationTitle("LiveStage Demo")
         }
     }
 }
