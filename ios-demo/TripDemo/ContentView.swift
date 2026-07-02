@@ -1,102 +1,20 @@
 import SwiftUI
 
+/// Two surfaces over one controller: the Trips tab is the presentation face (what a real app with
+/// LiveStage looks like), the Developer tab is the raw test harness. Both drive the same sessions.
 struct ContentView: View {
     @StateObject private var controller = LiveActivityController()
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    LabeledContent("Live Activities") {
-                        Text(controller.areActivitiesEnabled ? "Enabled" : "Disabled")
-                            .foregroundStyle(controller.areActivitiesEnabled ? .green : .red)
-                    }
-                    LabeledContent("Backend key") {
-                        Text(DemoConfig.isConfigured ? "Configured" : "Missing")
-                            .foregroundStyle(DemoConfig.isConfigured ? .green : .red)
-                    }
-                    LabeledContent("Backend URL") {
-                        Text(DemoConfig.baseURL.absoluteString).foregroundStyle(.secondary)
-                    }
-                    LabeledContent("Active sessions") {
-                        Text("\(controller.liveSessionIds.count)")
-                    }
-                } header: {
-                    Text("Status")
-                } footer: {
-                    if !DemoConfig.isConfigured {
-                        Text("Set ios-demo/DevelopmentSecrets.xcconfig with the seeded mobile key (cd backend && npm run seed), then run the backend (npm run dev).")
-                    } else if !controller.areActivitiesEnabled {
-                        Text("Enable Live Activities in Settings to test on this device.")
-                    }
+        TabView {
+            TripsView(controller: controller)
+                .tabItem {
+                    Label("Trips", systemImage: "airplane")
                 }
-
-                Section("Start a template (server-backed via the SDK)") {
-                    Button {
-                        controller.startJourney()
-                    } label: {
-                        Label("Start Journey", systemImage: "airplane")
-                    }
-                    Button {
-                        controller.startCountdown()
-                    } label: {
-                        Label("Start Countdown (target +25s)", systemImage: "timer")
-                    }
-                    Button {
-                        controller.startProgress()
-                    } label: {
-                        Label("Start Progress", systemImage: "shippingbox")
-                    }
-
-                    Button {
-                        controller.updatePrimary()
-                    } label: {
-                        Label("Update latest", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(controller.primarySessionId == nil)
-
-                    Button {
-                        controller.endAll()
-                    } label: {
-                        Label("End all", systemImage: "stop.fill")
-                    }
-                    .disabled(controller.liveSessionIds.isEmpty)
-                    .tint(.red)
+            DeveloperView(controller: controller)
+                .tabItem {
+                    Label("Developer", systemImage: "wrench.and.screwdriver")
                 }
-
-                Section {
-                    Button {
-                        controller.startSecondJourney()
-                    } label: {
-                        Label("Start second activity", systemImage: "plus.square.on.square")
-                    }
-                } header: {
-                    Text("Minimal presentation (needs 2+ activities)")
-                } footer: {
-                    Text("The minimal Dynamic Island circle only appears when 2+ Live Activities are live. Start two here (e.g. Journey + Countdown) to verify minimal. Countdown's zero-flip: start it, then DO NOT touch the app - at 0:00 it flips to \"Boarding now\".")
-                }
-
-                Section {
-                    Button {
-                        controller.startStaleDemo()
-                    } label: {
-                        Label("Start stale demo (20s)", systemImage: "bell")
-                    }
-                } header: {
-                    Text("Stale handling (debug)")
-                } footer: {
-                    Text("Start it and wait ~20s without tapping Update. The Lock Screen / expanded view de-emphasize and show \"May be outdated\". Tap \"Update latest\" to restore the normal look.")
-                }
-
-                if let error = controller.lastError {
-                    Section("Last error") {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("TripDemo")
         }
         // Debug-only: `-autostartTwo` launch arg starts both activities so the minimal
         // Dynamic Island presentation can be verified without manual taps. No effect normally.

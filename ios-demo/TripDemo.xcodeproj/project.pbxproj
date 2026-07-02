@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		2473983AA3C22BDE09243F06 /* TripDemoWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC26369266DB6B9CFA768FE4 /* TripDemoWidgetBundle.swift */; };
 		2CE9F64128C2D5D77425EBF6 /* LiveStagePreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E56A89CB70CCC77FC62241 /* LiveStagePreviews.swift */; };
+		4D22693CD5147A48092F8852 /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E618A275F3C5C67B6FEBBD6 /* TripsView.swift */; };
 		532E72A9710EF50B0D185C0C /* LiveStageModels in Frameworks */ = {isa = PBXBuildFile; productRef = 858DF78207CBED5A36EE9658 /* LiveStageModels */; };
 		6C09547510701DDA31CAC417 /* DemoConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB1AA414B7FB1B5BC4FD597 /* DemoConfig.swift */; };
 		6CE471EF721AEDA70DCF6063 /* TripDemoWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 24D7A300886A8AE03449901A /* TripDemoWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -17,6 +18,7 @@
 		B6F65973715EF8AD2D4CA7A9 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55027CEB30FEE92AE216D9BD /* LiveActivityController.swift */; };
 		C9CF228A3E88BFBBBB769490 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5695A50009EA632379A68201 /* ContentView.swift */; };
 		EDA9AB9C1ECDD6B2AC545968 /* LiveStageUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15306F0962130F465E25BF07 /* LiveStageUI */; };
+		F318086EA6340FB68D81A8D0 /* DeveloperView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFB2C72D511B285CB0CA6A3 /* DeveloperView.swift */; };
 		FF1012F9AE7FBC100766F6C2 /* LiveStageModels in Frameworks */ = {isa = PBXBuildFile; productRef = 29FDC320135A2691AFCF97E3 /* LiveStageModels */; };
 /* End PBXBuildFile section */
 
@@ -45,6 +47,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1E618A275F3C5C67B6FEBBD6 /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
 		20B23E93201925DF2266680E /* TripDemo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TripDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		24D7A300886A8AE03449901A /* TripDemoWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = TripDemoWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		335BAE80147054AF50764208 /* TripDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDemoApp.swift; sourceTree = "<group>"; };
@@ -52,11 +55,12 @@
 		52C767C0D1535E3177B5ADE9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		55027CEB30FEE92AE216D9BD /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
 		5695A50009EA632379A68201 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		5FFB2C72D511B285CB0CA6A3 /* DeveloperView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperView.swift; sourceTree = "<group>"; };
 		7DB1AA414B7FB1B5BC4FD597 /* DemoConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoConfig.swift; sourceTree = "<group>"; };
 		A2C6372F44D1E304AC0CD181 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EC26369266DB6B9CFA768FE4 /* TripDemoWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDemoWidgetBundle.swift; sourceTree = "<group>"; };
 		F1E56A89CB70CCC77FC62241 /* LiveStagePreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStagePreviews.swift; sourceTree = "<group>"; };
-		"TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DevelopmentSecrets.xcconfig; sourceTree = "<group>"; };
+		"TEMP_C45FA224-0C66-476B-A2C4-417AACE09A88" /* DevelopmentSecrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DevelopmentSecrets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,9 +99,11 @@
 			children = (
 				5695A50009EA632379A68201 /* ContentView.swift */,
 				7DB1AA414B7FB1B5BC4FD597 /* DemoConfig.swift */,
+				5FFB2C72D511B285CB0CA6A3 /* DeveloperView.swift */,
 				A2C6372F44D1E304AC0CD181 /* Info.plist */,
 				55027CEB30FEE92AE216D9BD /* LiveActivityController.swift */,
 				335BAE80147054AF50764208 /* TripDemoApp.swift */,
+				1E618A275F3C5C67B6FEBBD6 /* TripsView.swift */,
 			);
 			path = TripDemo;
 			sourceTree = "<group>";
@@ -130,10 +136,10 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
-		"TEMP_7DF3F30D-BC39-4A5E-AFD4-36A0613543A8" /* ios-demo */ = {
+		"TEMP_FA5742D5-F486-43E8-97EE-D19E7703CB12" /* ios-demo */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */,
+				"TEMP_C45FA224-0C66-476B-A2C4-417AACE09A88" /* DevelopmentSecrets.xcconfig */,
 			);
 			path = "ios-demo";
 			sourceTree = "<group>";
@@ -232,8 +238,10 @@
 			files = (
 				C9CF228A3E88BFBBBB769490 /* ContentView.swift in Sources */,
 				6C09547510701DDA31CAC417 /* DemoConfig.swift in Sources */,
+				F318086EA6340FB68D81A8D0 /* DeveloperView.swift in Sources */,
 				B6F65973715EF8AD2D4CA7A9 /* LiveActivityController.swift in Sources */,
 				A43A22A2F7152E12DA9DFF40 /* TripDemoApp.swift in Sources */,
+				4D22693CD5147A48092F8852 /* TripsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -259,7 +267,7 @@
 /* Begin XCBuildConfiguration section */
 		2A2C20700B78A9A138A13D80 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */;
+			baseConfigurationReference = "TEMP_C45FA224-0C66-476B-A2C4-417AACE09A88" /* DevelopmentSecrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
@@ -343,7 +351,7 @@
 		};
 		B19547CBE4029677A254AB01 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_C9E602F8-5A8C-4985-9196-06AEBA9864E6" /* DevelopmentSecrets.xcconfig */;
+			baseConfigurationReference = "TEMP_C45FA224-0C66-476B-A2C4-417AACE09A88" /* DevelopmentSecrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
