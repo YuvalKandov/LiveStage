@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LiveStage - intro</title>
+<!--
+  The animated intro for the class presentation (~27 seconds). Fully self-contained: no network,
+  no external assets. It auto-plays on load; press R (or click anywhere) to replay. The stage is
+  1920x1080 and scales to fit the window, so record the browser fullscreen with QuickTime
+  (File > New Screen Recording), press R when recording starts, and trim to the replay point.
+-->
+<style>
+  :root {
+    /* Not flat black: a deep blue-gray with ambient glows (the .glow divs), so the screen always
+       feels lit instead of scenes materializing out of a void. */
+    --bg: #0a0c12;
+    --text: #f5f5f7;
+    --text-2: #9a9aa2;
+    --card: #17191f;
+    --border: #262932;
+    --blue: #0a84ff;
+    --orange: #ff9f0a;
+    --green: #30d158;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The fixed 1920x1080 stage, scaled to fit the window (JS sets --fit). */
+  .stage {
+    position: absolute; left: 50%; top: 50%;
+    width: 1920px; height: 1080px;
+    transform: translate(-50%, -50%) scale(var(--fit, 1));
+    background: radial-gradient(1400px 900px at 32% 18%, #11141d 0%, var(--bg) 60%);
+    overflow: hidden;
+  }
+
+  /* Ambient color washes drifting slowly behind every scene (Apple-keynote style, not a void). */
+  .glow { position: absolute; border-radius: 50%; filter: blur(150px); pointer-events: none; }
+  .glow.ga {
+    width: 1000px; height: 1000px; left: -240px; top: -320px;
+    background: radial-gradient(circle, rgba(10, 132, 255, 0.20), transparent 68%);
+    animation: driftA 26s ease-in-out infinite alternate;
+  }
+  .glow.gb {
+    width: 900px; height: 900px; right: -260px; bottom: -340px;
+    background: radial-gradient(circle, rgba(94, 92, 230, 0.16), transparent 68%);
+    animation: driftB 32s ease-in-out infinite alternate;
+  }
+  @keyframes driftA { from { transform: translate(0, 0); } to { transform: translate(140px, 90px); } }
+  @keyframes driftB { from { transform: translate(0, 0); } to { transform: translate(-120px, -100px); } }
+
+  .scene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Every animated element is inert until .play is set (replay = remove class, reflow, re-add). */
+
+  /* ---------- Scene 1: the problem ---------------------------------------------------------- */
+  .s1 .line { font-size: 72px; font-weight: 600; letter-spacing: -0.02em; text-align: center; opacity: 0; }
+  .s1 .line b { color: var(--blue); font-weight: 600; }
+  .s1 .line + .line { margin-top: 28px; color: var(--text-2); font-weight: 500; font-size: 56px; }
+  .play .s1 { animation: hold 5s 0s both; }
+  .play .s1 .l1 { animation: riseIn 0.9s 0.5s both, fadeAway 0.6s 4.2s forwards; }
+  .play .s1 .l2 { animation: riseIn 0.9s 2.1s both, fadeAway 0.6s 4.2s forwards; }
+
+  /* ---------- Scene 2: templates ------------------------------------------------------------ */
+  .s2 .kicker { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600;
+    color: var(--blue); letter-spacing: 0.16em; text-transform: uppercase; opacity: 0; }
+  .s2 h2 { margin-top: 22px; font-size: 84px; font-weight: 700; letter-spacing: -0.025em; opacity: 0; }
+  .s2 .sub { margin-top: 16px; font-size: 36px; color: var(--text-2); opacity: 0; }
+  .cards { display: flex; gap: 36px; margin-top: 70px; }
+  .tcard {
+    width: 430px; padding: 34px 36px 30px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 24px;
+    opacity: 0;
+  }
+  .tcard .head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .tcard .tile { width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; }
+  .tcard .kind { font-size: 22px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); font-weight: 600; }
+  .tcard h3 { font-size: 34px; font-weight: 600; letter-spacing: -0.01em; }
+  .tcard .row { display: flex; justify-content: space-between; align-items: baseline; gap: 24px;
+    margin-top: 22px; font-size: 26px; color: var(--text-2); white-space: nowrap; }
+  .tcard .val { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 34px; }
+  .track { margin-top: 14px; height: 10px; border-radius: 5px; background: #3a3a3c; overflow: hidden; }
+  .fill { height: 100%; border-radius: 5px; width: 0; }
+  .play .s2 { animation: sceneIn 0.6s 4.9s both, fadeAway 0.6s 10.6s forwards; }
+  .play .s2 .kicker { animation: riseIn 0.7s 5.1s both; }
+  .play .s2 h2 { animation: riseIn 0.7s 5.3s both; }
+  .play .s2 .sub { animation: riseIn 0.7s 5.5s both; }
+  .play .s2 .c1 { animation: cardIn 0.7s 5.9s both; }
+  .play .s2 .c2 { animation: cardIn 0.7s 6.25s both; }
+  .play .s2 .c3 { animation: cardIn 0.7s 6.6s both; }
+  .play .s2 .c1 .fill { animation: growBar 2.4s 7.0s cubic-bezier(0.25, 1, 0.35, 1) both; }
+  .play .s2 .c3 .fill { animation: growBar72 2.4s 7.3s cubic-bezier(0.25, 1, 0.35, 1) both; }
+
+  /* ---------- Scene 3: the loop ------------------------------------------------------------- */
+  .s3 h2 { font-size: 76px; font-weight: 700; letter-spacing: -0.02em; opacity: 0; }
+  .s3 .sub { margin-top: 14px; font-size: 34px; color: var(--text-2); opacity: 0; }
+  .flow { position: relative; width: 1560px; height: 460px; margin-top: 80px; }
+  .node {
+    position: absolute; padding: 26px 40px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+    font-size: 32px; font-weight: 600; text-align: center; opacity: 0;
+  }
+  .node small { display: block; margin-top: 6px; font-size: 22px; font-weight: 500; color: var(--text-2); }
+  .n1 { left: 0; top: 60px; width: 340px; }
+  .n2 { left: 560px; top: 60px; width: 430px; }
+  .n3 { left: 1210px; top: 34px; width: 350px; }
+  .n4 { left: 560px; top: 320px; width: 430px; }
+  .wire { position: absolute; height: 4px; background: #3a3a3c; border-radius: 2px; transform-origin: left center; transform: scaleX(0); }
+  .wire.w1 { left: 350px; top: 118px; width: 200px; }
+  .wire.w2 { left: 1000px; top: 118px; width: 200px; }
+  .wire.w3 { left: 773px; top: 195px; width: 4px; height: 125px; transform-origin: center top; transform: scaleY(0); }
+  .wlabel { position: absolute; font-size: 24px; color: var(--text-2); opacity: 0; white-space: nowrap; }
+  .wl1 { left: 355px; top: 70px; width: 190px; text-align: center; }
+  .wl2 { left: 1005px; top: 70px; width: 190px; text-align: center; }
+  .wl2b { left: 1005px; top: 138px; width: 190px; text-align: center; color: var(--green); }
+  .wl3 { left: 800px; top: 235px; }
+  .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; opacity: 0; }
+  .d1 { background: var(--blue); left: 350px; top: 113px; }
+  .d2 { background: var(--blue); left: 1000px; top: 113px; }
+  .d2b { background: var(--green); left: 1186px; top: 113px; }
+  .d3 { background: var(--green); left: 768px; top: 195px; }
+  .play .s3 { animation: sceneIn 0.6s 11.0s both, fadeAway 0.6s 17.1s forwards; }
+  .play .s3 h2 { animation: riseIn 0.7s 11.2s both; }
+  .play .s3 .sub { animation: riseIn 0.7s 11.4s both; }
+  .play .s3 .n1 { animation: cardIn 0.6s 11.6s both; }
+  .play .s3 .w1 { animation: drawWire 0.5s 11.9s both; }
+  .play .s3 .wl1 { animation: fadeIn 0.5s 12.1s both; }
+  .play .s3 .n2 { animation: cardIn 0.6s 12.2s both; }
+  .play .s3 .w2 { animation: drawWire 0.5s 12.5s both; }
+  .play .s3 .wl2 { animation: fadeIn 0.5s 12.7s both; }
+  .play .s3 .n3 { animation: cardIn 0.6s 12.8s both; }
+  .play .s3 .wl2b { animation: fadeIn 0.5s 13.3s both; }
+  .play .s3 .w3 { animation: drawWireDown 0.5s 13.1s both; }
+  .play .s3 .n4 { animation: cardIn 0.6s 13.4s both; }
+  .play .s3 .wl3 { animation: fadeIn 0.5s 13.7s both; }
+  /* Dots loop infinitely so the flow keeps pulsing right up until scene 3 fades out - the scene's
+     own fadeAway hides them, so the motion never "ends early" and leaves a static diagram. */
+  .play .s3 .d1 { animation: travel1 1.1s 12.1s ease-in-out infinite; }
+  .play .s3 .d2 { animation: travel1 1.1s 12.7s ease-in-out infinite; }
+  .play .s3 .d2b { animation: travelBack 1.1s 13.3s ease-in-out infinite; }
+  .play .s3 .d3 { animation: travelDown 1.1s 13.9s ease-in-out infinite; }
+
+  /* ---------- Scene 3b: the honest statistics ------------------------------------------------ */
+  .s3b .kicker { font-size: 30px; font-weight: 600; color: var(--blue); letter-spacing: 0.16em;
+    text-transform: uppercase; opacity: 0; }
+  .s3b h2 { margin-top: 20px; font-size: 76px; font-weight: 700; letter-spacing: -0.02em; opacity: 0; }
+  .stats { display: grid; grid-template-columns: repeat(2, 620px); gap: 28px 32px; margin-top: 56px; }
+  .stat {
+    position: relative; text-align: left;
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+    padding: 28px 36px 26px 44px;
+    opacity: 0;
+  }
+  /* The accent stripe sweeps in after its tile lands. */
+  .stat::before { content: ""; position: absolute; left: 0; top: 18px; bottom: 18px; width: 6px;
+    border-radius: 3px; background: var(--tone); transform: scaleY(0); transform-origin: center top; }
+  .stat .label { font-size: 27px; font-weight: 600; }
+  .stat .num { margin: 4px 0 2px; font-size: 84px; font-weight: 700; letter-spacing: -0.02em;
+    color: var(--tone); font-variant-numeric: tabular-nums; opacity: 0; }
+  .stat .num .unit { font-size: 44px; }
+  .stat .sub { font-size: 24px; color: var(--text-2); }
+  .honest { margin-top: 52px; max-width: 1150px; font-size: 32px; line-height: 1.4; text-align: center;
+    color: var(--text-2); opacity: 0; }
+  .honest b { color: var(--text); font-weight: 600; }
+  .play .s3b { animation: sceneIn 0.6s 17.7s both, fadeAway 0.6s 24.6s forwards; }
+  .play .s3b .kicker { animation: riseIn 0.7s 17.9s both; }
+  .play .s3b h2 { animation: riseIn 0.7s 18.1s both; }
+  .play .s3b .q1 { animation: cardIn 0.6s 18.6s both; }
+  .play .s3b .q2 { animation: cardIn 0.6s 18.85s both; }
+  .play .s3b .q3 { animation: cardIn 0.6s 19.1s both; }
+  .play .s3b .q4 { animation: cardIn 0.6s 19.35s both; }
+  .play .s3b .q1::before { animation: drawWireDown 0.45s 18.85s both; }
+  .play .s3b .q2::before { animation: drawWireDown 0.45s 19.1s both; }
+  .play .s3b .q3::before { animation: drawWireDown 0.45s 19.35s both; }
+  .play .s3b .q4::before { animation: drawWireDown 0.45s 19.6s both; }
+  .play .s3b .q1 .num { animation: numIn 0.7s 18.95s both; }
+  .play .s3b .q2 .num { animation: numIn 0.7s 19.2s both; }
+  .play .s3b .q3 .num { animation: numIn 0.7s 19.45s both; }
+  .play .s3b .q4 .num { animation: numIn 0.7s 19.7s both; }
+  .play .s3b .honest { animation: riseIn 0.8s 20.7s both; }
+
+  /* ---------- Scene 4: closing -------------------------------------------------------------- */
+  .s4 .mark { display: flex; align-items: center; gap: 26px; opacity: 0; }
+  .s4 .bolt { width: 96px; height: 96px; border-radius: 26px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #0a84ff, #0060df); }
+  .s4 .name { font-size: 110px; font-weight: 700; letter-spacing: -0.03em; }
+  .s4 .tag { margin-top: 30px; font-size: 40px; color: var(--text-2); opacity: 0; text-align: center; }
+  .play .s4 { animation: sceneIn 0.7s 25.1s both; }
+  .play .s4 .mark { animation: riseIn 0.9s 25.3s both; }
+  .play .s4 .tag { animation: riseIn 0.9s 26.0s both; }
+
+  /* ---------- keyframes ---------------------------------------------------------------------- */
+  @keyframes hold { from { opacity: 1; } to { opacity: 1; } }
+  @keyframes sceneIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeAway { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(34px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(44px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes numIn {
+    from { opacity: 0; transform: translateY(18px); filter: blur(8px); }
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+  @keyframes growBar { from { width: 22%; } to { width: 70%; } }
+  @keyframes growBar72 { from { width: 30%; } to { width: 72%; } }
+  @keyframes drawWire { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes drawWireDown { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  @keyframes travel1 {
+    0% { opacity: 0; transform: translateX(0); }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(190px); }
+  }
+  @keyframes travelBack {
+    0% { opacity: 0; transform: translateX(0); }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-190px); }
+  }
+  @keyframes travelDown {
+    0% { opacity: 0; transform: translateY(0); }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(130px); }
+  }
+</style>
+</head>
+<body>
+<div class="stage play" id="stage">
+
+  <div class="glow ga"></div>
+  <div class="glow gb"></div>
+
+  <section class="scene s1">
+    <div class="line l1">Live Activities are the best thing on the <b>Lock Screen</b>.</div>
+    <div class="line l2">Building them is the hard part.</div>
+  </section>
+
+  <section class="scene s2">
+    <div class="kicker">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="#0a84ff"><polygon points="13 2 3 14 11 14 9 22 21 9 13 9"/></svg>
+      LiveStage
+    </div>
+    <h2>Pick a template. Send typed state.</h2>
+    <div class="sub">Three semantic templates, rendered natively on every surface.</div>
+    <div class="cards">
+      <div class="tcard c1">
+        <div class="head">
+          <span class="tile" style="background: rgba(10,132,255,0.18);">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+          </span>
+          <div>
+            <div class="kind">Journey</div>
+            <h3>Trip to Rome</h3>
+          </div>
+        </div>
+        <div class="row"><span>Boarding at gate B12</span><span class="val" style="color:#0a84ff;">On time</span></div>
+        <div class="track"><div class="fill" style="background:#0a84ff;"></div></div>
+      </div>
+      <div class="tcard c2">
+        <div class="head">
+          <span class="tile" style="background: rgba(255,159,10,0.18);">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#ff9f0a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>
+          </span>
+          <div>
+            <div class="kind">Countdown</div>
+            <h3>Flight to Rome</h3>
+          </div>
+        </div>
+        <div class="row"><span>Boarding in</span><span class="val" style="color:#ff9f0a;">1:42:00</span></div>
+        <div class="track" style="visibility:hidden;"><div class="fill"></div></div>
+      </div>
+      <div class="tcard c3">
+        <div class="head">
+          <span class="tile" style="background: rgba(48,209,88,0.18);">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><line x1="12" x2="12" y1="22" y2="12"/></svg>
+          </span>
+          <div>
+            <div class="kind">Progress</div>
+            <h3>Order #42</h3>
+          </div>
+        </div>
+        <div class="row"><span>Packing</span><span class="val" style="color:#30d158;">72%</span></div>
+        <div class="track"><div class="fill" style="background:#30d158;"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene s3">
+    <h2>One loop, end to end.</h2>
+    <div class="sub">Render and update, report events, aggregate, see it in the console.</div>
+    <div class="flow">
+      <div class="node n1">Your app<small>one start call</small></div>
+      <div class="wire w1"></div>
+      <div class="wlabel wl1">typed state</div>
+      <div class="dot d1"></div>
+      <div class="node n2">LiveStage server<small>versioned, validated state</small></div>
+      <div class="wire w2"></div>
+      <div class="wlabel wl2">live sync</div>
+      <div class="wlabel wl2b">events</div>
+      <div class="dot d2"></div>
+      <div class="dot d2b"></div>
+      <div class="node n3">Lock Screen +<br/>Dynamic Island</div>
+      <div class="wire w3"></div>
+      <div class="dot d3"></div>
+      <div class="wlabel wl3">Insights API</div>
+      <div class="node n4">Developer console<small>honest analytics</small></div>
+    </div>
+  </section>
+
+  <section class="scene s3b">
+    <div class="kicker">The service layer</div>
+    <h2>Real statistics. Honestly named.</h2>
+    <div class="stats">
+      <div class="stat q1" style="--tone: var(--green);">
+        <div class="label">Apply-success rate</div>
+        <div class="num">97.7<span class="unit">%</span></div>
+        <div class="sub">updates acknowledged by the device</div>
+      </div>
+      <div class="stat q2" style="--tone: #7d7aff;">
+        <div class="label">Acknowledged sync latency</div>
+        <div class="num">124<span class="unit">ms</span></div>
+        <div class="sub">median, server-clock</div>
+      </div>
+      <div class="stat q3" style="--tone: var(--blue);">
+        <div class="label">Interaction rate</div>
+        <div class="num">46.7<span class="unit">%</span></div>
+        <div class="sub">sessions with an open or tap</div>
+      </div>
+      <div class="stat q4" style="--tone: var(--orange);">
+        <div class="label">Update-rejection rate</div>
+        <div class="num">7.1<span class="unit">%</span></div>
+        <div class="sub">server-rejected updates</div>
+      </div>
+    </div>
+    <p class="honest">We say <b>interactions</b>, never &#8220;views&#8221;. ActivityKit cannot prove a human saw it, so we never claim it.</p>
+  </section>
+
+  <section class="scene s4">
+    <div class="mark">
+      <span class="bolt">
+        <svg width="54" height="54" viewBox="0 0 24 24" fill="#fff"><polygon points="13 2 3 14 11 14 9 22 21 9 13 9"/></svg>
+      </span>
+      <span class="name">LiveStage</span>
+    </div>
+    <div class="tag">Server-configurable Live Activities. Native rendering. Honest analytics.</div>
+  </section>
+
+</div>
+
+<script>
+  const stage = document.getElementById("stage");
+
+  // Scale the fixed 1920x1080 stage to fit whatever window records it.
+  function fit() {
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    stage.style.setProperty("--fit", s);
+  }
+  fit();
+  addEventListener("resize", fit);
+
+  // Replay: drop the .play class, force a reflow so the animations reset, re-add it.
+  function replay() {
+    stage.classList.remove("play");
+    void stage.offsetWidth;
+    stage.classList.add("play");
+  }
+  addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() === "r") replay();
+  });
+  addEventListener("click", replay);
+</script>
+</body>
+</html>
