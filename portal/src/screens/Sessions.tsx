@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { listActiveSessions, updateSession, PortalApiError } from "../api";
+import { Ban } from "lucide-react";
+import { listActiveSessions, updateSession, endSessionAdmin, PortalApiError } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { LiveLockPreview } from "../preview/Preview";
 import {
@@ -86,7 +87,7 @@ export function Sessions() {
       <div className="cols">
         <SessionsPanel sessions={sessions} selected={selected} bumped={bumped} onSelect={setSelected} onRefresh={refresh} />
         <div>
-          {selectedSession && <LivePreviewCard session={selectedSession} />}
+          {selectedSession && <LivePreviewCard session={selectedSession} onEnded={refresh} />}
           {selected && <SessionExplorer sessionId={selected} version={selectedSession?.version ?? 0} />}
           <UpdateForm session={selectedSession ?? null} onApplied={refresh} />
         </div>
@@ -96,8 +97,26 @@ export function Sessions() {
 }
 
 /** What the selected session's Lock Screen shows right now: its actual current state rendered with
- *  the branding frozen at start (a later template edit never changes a running activity's look). */
-function LivePreviewCard(props: { session: AdminSession }) {
+ *  the branding frozen at start (a later template edit never changes a running activity's look).
+ *  Also hosts the End-session action - a console-side cleanup, not the production lifecycle path. */
+function LivePreviewCard(props: { session: AdminSession; onEnded: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function end() {
+    setBusy(true);
+    setError(null);
+    try {
+      await endSessionAdmin(props.session.sessionId);
+      props.onEnded(); // refreshes the list; the ended session drops out and selection clears
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
   return (
     <div className="card" style={{ marginBottom: 20 }}>
       <div className="row">
@@ -108,6 +127,28 @@ function LivePreviewCard(props: { session: AdminSession }) {
         The current state on this session's Lock Screen. Approximate - the device renders the pixels.
       </div>
       <LiveLockPreview payload={props.session.state.payload} attributes={props.session.attributes} />
+
+      <div className="row" style={{ marginTop: 14, alignItems: "center" }}>
+        {confirming ? (
+          <>
+            <button className="ghost danger" onClick={end} disabled={busy}>
+              {busy ? "Ending…" : "Confirm end"}
+            </button>
+            <button className="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button className="ghost danger" onClick={() => setConfirming(true)}>
+            <Ban size={13} aria-hidden /> End session
+          </button>
+        )}
+      </div>
+      <div className="muted" style={{ marginTop: 8 }}>
+        Ends the server session and stops sync. In V1 there is no push, so this does not clear the
+        activity from the device - only the app calling end removes it from the Lock Screen.
+      </div>
+      {error && <div className="error">{error}</div>}
     </div>
   );
 }

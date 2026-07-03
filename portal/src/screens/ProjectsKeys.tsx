@@ -169,6 +169,12 @@ function KeysPanel(props: { projectId: string; onMobileKey: (raw: string) => voi
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedApiKey | null>(null);
   const [activeServiceId, setActiveServiceId] = useState<string | null>(null);
+  // Revoked keys are kept as an audit trail but hidden by default so the list reads as the keys in
+  // use; the toggle reveals them (with a count) without deleting anything.
+  const [showRevoked, setShowRevoked] = useState(false);
+
+  const revokedCount = keys.filter((k) => k.revoked).length;
+  const visibleKeys = showRevoked ? keys : keys.filter((k) => !k.revoked);
 
   const load = useCallback(async () => {
     try {
@@ -219,7 +225,14 @@ function KeysPanel(props: { projectId: string; onMobileKey: (raw: string) => voi
 
   return (
     <div className="card">
-      <h2>API keys</h2>
+      <div className="row" style={{ alignItems: "center" }}>
+        <h2>API keys</h2>
+        {revokedCount > 0 && (
+          <button className="ghost" onClick={() => setShowRevoked((v) => !v)}>
+            {showRevoked ? `Hide revoked (${revokedCount})` : `Show revoked (${revokedCount})`}
+          </button>
+        )}
+      </div>
       <div className="muted" style={{ marginBottom: 10 }}>
         <b>mobile</b> keys ship in the app (SDK writes and events; rejected by the Insights API).{" "}
         <b>service</b> keys read the Insights API only (never shipped; rejected by mutation routes).
@@ -248,7 +261,10 @@ function KeysPanel(props: { projectId: string; onMobileKey: (raw: string) => voi
       )}
 
       {keys.length === 0 && <div className="muted">No keys for this project yet.</div>}
-      {keys.map((k) => (
+      {keys.length > 0 && visibleKeys.length === 0 && (
+        <div className="muted">All keys for this project are revoked. Use "Show revoked" to see them.</div>
+      )}
+      {visibleKeys.map((k) => (
         <div key={k.id} className="keyrow">
           <span className={`pill ${k.keyType}`}>{k.keyType}</span>
           <span className="sid">{k.id}</span>

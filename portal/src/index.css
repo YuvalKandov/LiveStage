@@ -289,7 +289,10 @@ body { margin: 0; background: var(--bg); color: var(--text);
 .pill.mobile { background: var(--accent-tint); color: var(--accent-text); }
 .pill.service { background: var(--success-tint); color: var(--success-text); }
 .keygen { display: flex; gap: 8px; align-items: center; }
-.keygen input { flex: 1; }
+.keygen input { flex: 1; min-width: 140px; }
+/* The key-type dropdown reuses .metric-select, whose margin-left:auto (for the chart header) would
+   here swallow the row's free space and collapse the label input; cancel it inside .keygen. */
+.keygen .metric-select { margin-left: 0; }
 
 /* Totals grid. */
 .totals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
@@ -359,6 +362,8 @@ button.ghost { display: inline-flex; align-items: center; gap: 5px; border: 1px 
   font-size: var(--fs-caption); cursor: pointer; transition: background 0.12s ease; }
 button.ghost:hover { background: var(--surface-2); }
 button.ghost svg { opacity: 0.8; }
+button.ghost.danger { color: var(--danger-text); border-color: var(--danger-text); }
+button.ghost.danger:hover { background: var(--danger-tint); }
 
 .error { color: var(--danger-text); font-size: var(--fs-sm); margin-top: 10px; }
 .ok { color: var(--success-text); font-size: var(--fs-sm); margin-top: 10px; }

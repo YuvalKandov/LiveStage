@@ -49,6 +49,15 @@ export function updateSession(sessionId: string, payload: TemplatePayload): Prom
   });
 }
 
+/** End a session from the console (POST /v1/admin/activities/:id/end). Idempotent; a per-row
+ *  equivalent of the cleanup script. Ends the server session and stops sync (see the button's note:
+ *  in V1 the device removes the on-screen activity only when the app itself calls end). */
+export function endSessionAdmin(
+  sessionId: string,
+): Promise<{ status: "ended"; endedAt: string | null; alreadyEnded: boolean }> {
+  return adminFetch(`/v1/admin/activities/${encodeURIComponent(sessionId)}/end`, { method: "POST" });
+}
+
 /** Lifecycle + rejection logs (build spec §8.3: GET /v1/admin/logs). */
 export function listLogs(): Promise<{ logs: LogRow[] }> {
   return adminFetch("/v1/admin/logs");

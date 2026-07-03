@@ -64,7 +64,11 @@ async function insightsFetch<T>(path: string): Promise<T> {
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${key}` } });
+    // no-store so a manual Refresh always reads live numbers, never a stale cached response.
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${key}` },
+      cache: "no-store",
+    });
   } catch (e) {
     throw new InsightsApiError(0, `Cannot reach the backend (${e instanceof Error ? e.message : String(e)}).`);
   }

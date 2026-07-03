@@ -12,6 +12,7 @@ interface SessionRow {
   status: string;
   version: number;
   last_updated_at: string;
+  ended_at: string | null;
 }
 
 interface StateRow {
@@ -164,4 +165,45 @@ export function rejectUpdate(
       bumpDaily(db, { projectId: args.projectId, templateId: args.templateId, date, column: "rejected_updates" });
     }
   })();
+}
+
+export interface EndResult {
+  status: "ended";
+  endedAt: string | null;
+  alreadyEnded: boolean;
+}
+
+/**
+ * The single idempotent end path (build spec §8.5), shared by the SDK end route, the cleanup script,
+ * and the portal's End-session button. `active -> ended` writes the transition, an end log, and the
+ * `sessions_ended` counter in one transaction; `ended -> ended` returns the already-ended result with
+ * no new write, so a retried end never double-counts. Throws HttpError(404) if the session is unknown.
+ *
+ * Pass `projectId` for project-scoped callers (a mobile key must not end another project's session);
+ * omit it for the admin plane, which is global. This ends the SERVER session only: with no push in
+ * V1, a device stops syncing on its next poll but does NOT remove the Live Activity - only the app
+ * calling `LiveStage.end()` dismisses it on-device.
+ */
+export function endSession(
+  db: Database,
+  args: { sessionId: string; projectId?: string; reason?: string | null },
+): EndResult {
+  const session = db.prepare(`SELECT * FROM activity_sessions WHERE id = ?`).get(args.sessionId) as
+    | SessionRow
+    | undefined;
+  if (!session || (args.projectId !== undefined && session.project_id !== args.projectId)) {
+    throw new HttpError(404, "session_not_found", `No activity session ${args.sessionId}.`);
+  }
+  if (session.status === "ended") {
+    return { status: "ended", endedAt: session.ended_at, alreadyEnded: true };
+  }
+  const now = nowIso();
+  db.transaction(() => {
+    db.prepare(`UPDATE activity_sessions SET status = 'ended', ended_at = ? WHERE id = ?`).run(now, args.sessionId);
+    writeLog(db, { projectId: session.project_id, sessionId: args.sessionId, kind: "end", detail: args.reason ?? null, status: "ok" });
+    // [server-op] count the active->ended transition only (already-ended returns above, so a retry
+    // can't double-count). Same transaction as the raw write (§8.6).
+    bumpDaily(db, { projectId: session.project_id, templateId: session.template_id, date: isoDate(now), column: "sessions_ended" });
+  })();
+  return { status: "ended", endedAt: now, alreadyEnded: false };
 }

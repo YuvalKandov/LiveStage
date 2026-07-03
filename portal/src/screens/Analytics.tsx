@@ -88,6 +88,10 @@ export function Analytics() {
   const [error, setError] = useState<string | null>(null);
   const [keyProblem, setKeyProblem] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Bumped by Refresh so the sub-panels (time series, by-template) refetch even when the date range
+  // is unchanged - clicking Refresh with the same range would otherwise leave their effects idle and
+  // only the top-level summary would update (the old "needs a full page reload" bug).
+  const [reloadKey, setReloadKey] = useState(0);
   // Latest-wins guard: changing the range while a slow request is in flight must not let the older
   // response resolve last and overwrite the newer summary (the charts have the same guard).
   const loadSeq = useRef(0);
@@ -130,6 +134,12 @@ export function Analytics() {
     load();
   }, [load]);
 
+  // Refresh: refetch the summary AND bump reloadKey so every sub-panel refetches too.
+  const refreshAll = useCallback(() => {
+    setReloadKey((k) => k + 1);
+    load();
+  }, [load]);
+
   const latencyHero = summary?.heroes.acknowledgedSyncLatencyMs;
 
   // Count-up on the four hero values (presentational only; n/a cases stay n/a).
@@ -155,7 +165,7 @@ export function Analytics() {
             <label>To (exclusive)</label>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
-          <button className="ghost" onClick={load} disabled={loading}>
+          <button className="ghost" onClick={refreshAll} disabled={loading}>
             {loading ? "Loading…" : "Refresh"}
           </button>
           <span className="muted">Range is half-open [from, to). All metrics read the Insights API.</span>
@@ -253,9 +263,9 @@ export function Analytics() {
             </div>
           </div>
 
-          <TimeSeries from={fromIso} to={toIso} />
+          <TimeSeries from={fromIso} to={toIso} reloadKey={reloadKey} />
 
-          <TemplateComparison projectId={summary.projectId} from={fromIso} to={toIso} />
+          <TemplateComparison projectId={summary.projectId} from={fromIso} to={toIso} reloadKey={reloadKey} />
 
           <div className="card" style={{ marginTop: 16 }}>
             <h2>Totals for the range</h2>
@@ -288,7 +298,7 @@ export function Analytics() {
 // The per-day time-series chart. It reads /v1/insights/timeseries, which serves daily_metrics rows
 // only (never the cohort-aligned range heroes), so the daily rate/latency variants are operational,
 // not the hero of the same name; the endpoint's `note` is shown verbatim to keep that honest.
-function TimeSeries(props: { from: string; to: string }) {
+function TimeSeries(props: { from: string; to: string; reloadKey: number }) {
   const [metric, setMetric] = useState("sessionsStarted");
   const [data, setData] = useState<TimeseriesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -330,7 +340,7 @@ function TimeSeries(props: { from: string; to: string }) {
     return () => {
       cancelled = true;
     };
-  }, [metric, props.from, props.to]);
+  }, [metric, props.from, props.to, props.reloadKey]);
 
   const isRate = data?.kind === "rate";
   const isLatency = data?.kind === "latency";
@@ -502,7 +512,7 @@ interface TemplateRow {
   summary: InsightsSummary;
 }
 
-function TemplateComparison(props: { projectId: string; from: string; to: string }) {
+function TemplateComparison(props: { projectId: string; from: string; to: string; reloadKey: number }) {
   const [rows, setRows] = useState<TemplateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -540,7 +550,7 @@ function TemplateComparison(props: { projectId: string; from: string; to: string
     return () => {
       cancelled = true;
     };
-  }, [props.projectId, props.from, props.to]);
+  }, [props.projectId, props.from, props.to, props.reloadKey]);
 
   return (
     <div className="card" style={{ marginTop: 16 }}>

@@ -6,7 +6,7 @@ import { requireMobileKey } from "../auth/middleware";
 import { getSession, getTemplate, currentState } from "../repo";
 import { composeDeepLink } from "../deeplink";
 import { validatePayload } from "../validation/index";
-import { applyUpdate, rejectUpdate } from "../services/updateService";
+import { applyUpdate, rejectUpdate, endSession } from "../services/updateService";
 import { bumpDaily } from "../analytics/daily";
 import { writeLog } from "../logs";
 import type { ActivityAttributes, TemplateType } from "../models";
@@ -199,25 +199,7 @@ export function registerActivityRoutes(app: FastifyInstance, db: Database): void
     const key = requireMobileKey(db, req);
     const { sessionId } = req.params as { sessionId: string };
     const body = (req.body ?? {}) as { reason?: string };
-    const session = getSession(db, key.projectId, sessionId);
-
-    if (session.status === "ended") {
-      return reply.send({ status: "ended", endedAt: session.ended_at, alreadyEnded: true });
-    }
-    const now = nowIso();
-    db.transaction(() => {
-      db.prepare(`UPDATE activity_sessions SET status = 'ended', ended_at = ? WHERE id = ?`).run(now, sessionId);
-      writeLog(db, {
-        projectId: key.projectId,
-        sessionId,
-        kind: "end",
-        detail: body.reason ?? null,
-        status: "ok",
-      });
-      // [server-op] count the active->ended transition only (the already-ended path returns above,
-      // so a retried end can't double-count). Same transaction as the raw write (§8.6).
-      bumpDaily(db, { projectId: key.projectId, templateId: session.template_id, date: isoDate(now), column: "sessions_ended" });
-    })();
-    return reply.send({ status: "ended", endedAt: now, alreadyEnded: false });
+    // Project-scoped: the mobile key can only end its own project's session (unknown/foreign -> 404).
+    return reply.send(endSession(db, { sessionId, projectId: key.projectId, reason: body.reason }));
   });
 }

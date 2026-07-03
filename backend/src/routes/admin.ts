@@ -4,7 +4,7 @@ import type { Database } from "better-sqlite3";
 import { HttpError } from "../util";
 import { requireAdmin } from "../auth/middleware";
 import { validatePayload } from "../validation/index";
-import { applyUpdate, rejectUpdate } from "../services/updateService";
+import { applyUpdate, rejectUpdate, endSession } from "../services/updateService";
 import { currentState, type SessionRow } from "../repo";
 import type { TemplateType } from "../models";
 
@@ -96,6 +96,17 @@ export function registerAdminRoutes(app: FastifyInstance, db: Database): void {
       if (e instanceof HttpError && e.status === 409) reject(e.code);
       throw e;
     }
+  });
+
+  // POST /v1/admin/activities/:sessionId/end — end a session from the console (a per-row equivalent of
+  // the `npm run cleanup` script). Idempotent and global (admin plane, not project-scoped), reusing the
+  // same endSession path as the SDK. Ends the SERVER session only: with no push in V1, the device stops
+  // syncing on its next poll but removes the on-screen activity only when the app itself calls end.
+  app.post("/v1/admin/activities/:sessionId/end", (req, reply) => {
+    requireAdmin(req);
+    const { sessionId } = req.params as { sessionId: string };
+    const body = (req.body ?? {}) as { reason?: string };
+    return reply.send(endSession(db, { sessionId, reason: body.reason ?? "portal" }));
   });
 
   // GET /v1/admin/logs — lifecycle + rejection logs (most recent first).
